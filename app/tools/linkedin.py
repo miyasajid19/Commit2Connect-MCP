@@ -10,14 +10,37 @@ def LinkedInTokens()->dict:
     return {
         "access_token": os.getenv("LINKEDIN_ACCESS_TOKEN"),
         "version": os.getenv("LINKEDIN_API_VERSION", "202609"),
+        "person_id":"HN5UaSrPTM"
     }
 
 @tool
 async def get_profile(tokens:dict=Depends(LinkedInTokens))->dict:
     '''
-    Get the profile information of the authenticated user from LinkedIn.
+    Get the authenticated user's OpenID Connect profile information from LinkedIn.
+
+    A successful response may include the user's subject identifier, email
+    verification status, display name, given name, family name, locale, email
+    address, and profile-picture URL. Typical response fields include ``sub``,
+    ``email_verified``, ``name``, ``locale``, ``given_name``, ``family_name``,
+    ``email``, and ``picture``.
+
+    Response fields:
+        ``sub``: LinkedIn's stable, unique identifier for the authenticated
+            member (the OpenID Connect subject identifier).
+        ``email_verified``: Whether LinkedIn has verified the member's email
+            address.
+        ``name``: The member's full display name.
+        ``locale``: A dictionary containing the preferred ``language`` and
+            ``country`` codes, such as ``en`` and ``US``.
+        ``given_name``: The member's first or given name.
+        ``family_name``: The member's last or family name.
+        ``email``: The member's email address associated with the account.
+        ``picture``: The URL of the member's profile picture, when available.
+
     Returns:
-        dict: A dictionary containing the user's profile information or an error message.
+        dict: A dictionary containing the LinkedIn profile information. If the
+            access token is missing or the request fails, returns a dictionary
+            containing an ``error`` key with a description of the problem.
     '''
     access_token = tokens.get("access_token")
     ctx=get_context()
