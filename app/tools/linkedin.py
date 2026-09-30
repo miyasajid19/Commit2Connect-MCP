@@ -65,3 +65,55 @@ async def get_profile(tokens:dict=Depends(LinkedInTokens))->dict:
 
     return response.json()
 
+@tool
+async def create_text_post(content:str, tokens:dict=Depends(LinkedInTokens))->dict:
+    '''
+    Create a new post on LinkedIn with only text content.
+
+    Args:
+        content (str): The content of the post to be created.
+        tokens (dict): A dictionary containing the LinkedIn access token and API version.
+
+    Returns:
+        dict: A dictionary containing the response from the LinkedIn API. If the
+            access token is missing or the request fails, returns a dictionary
+            containing an ``error`` key with a description of the problem.
+    '''
+    access_token = tokens.get("access_token")
+    version = tokens.get("version", "202609")
+    person_id = tokens.get("person_id")
+
+    ctx=get_context()
+    if not access_token:
+        await ctx.warning("LinkedIn access token is not set.")
+        return {"error": "LinkedIn access token is not set."}
+    
+    response = requests.post(
+        "https://api.linkedin.com/rest/posts",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Linkedin-Version": version,
+            "X-Restli-Protocol-Version": "2.0.0",
+            "Content-Type": "application/json",
+        },
+        json={
+            "author": f"urn:li:person:{person_id}",
+            "commentary": content,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
+            },
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        },
+        timeout=30,
+    )
+    ctx.info(f"LinkedIn post creation response: {response.status_code} - {response.text}")
+    
+    response.raise_for_status()
+    return {
+        "status_code": response.status_code,
+        "response": response.headers.get("x-restli-id"),
+    }
