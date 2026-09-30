@@ -785,3 +785,111 @@ async def create_image_post(file_path: str,commentary: str = "",alt_text: str = 
         "post_urn": post_urn,
         "message": "Image post created successfully.",
     }
+    
+    
+    
+@tool
+async def create_article_post(source_url: str,commentary: str,title: str,description: str = "",thumbnail_path: str | None = None,tokens: dict = Depends(LinkedInTokens)) -> dict:
+    """
+    Create a LinkedIn article/link post.
+
+    Parameters
+    ----------
+    source_url:
+        URL of the article/page being shared.
+
+    commentary:
+        Text shown above the article preview.
+
+    title:
+        Article preview title.
+
+    description:
+        Article preview description.
+
+    thumbnail_path:
+        Optional local path to an image file to use as the article thumbnail.
+    """
+    ctx=get_context()
+    access_token = tokens.get("access_token")
+    api_version = tokens.get("version", "202609")
+    person_id = tokens.get("person_id")
+    author = f"urn:li:person:{person_id}"
+    headers = tokens.get("header")
+    api_base = tokens.get("api_base")
+
+    ctx.info("Creating LinkedIn article post...")
+
+    if not access_token:
+        ctx.warning("LinkedIn access token is not set.")
+        return {"success": False, "message": "LinkedIn access token is not set."}
+    if not api_version:
+        ctx.warning("LinkedIn API version is not set.")
+        return {"success": False, "message": "LinkedIn API version is not set."}
+    
+    article = {
+        "title": title,
+        "description": description,
+        "source": source_url,
+    }
+
+    if thumbnail_path:
+        if not os.path.isfile(thumbnail_path):
+            ctx.warning(f"Thumbnail file not found: {thumbnail_path}")
+            return {"success": False, "message": f"Thumbnail file not found: {thumbnail_path}"}
+        image_urn = upload_image(thumbnail_path, headers, author, access_token)
+        article["thumbnail"] = image_urn
+        ctx.info(f"Thumbnail uploaded successfully. Image URN: {image_urn}")
+        
+    # --------------------------------------------------------
+    # Build post
+    # --------------------------------------------------------
+
+    payload = {
+        "author": author,
+        "commentary": commentary,
+        "visibility": "PUBLIC",
+
+        "distribution": {
+            "feedDistribution": "MAIN_FEED",
+            "targetEntities": [],
+            "thirdPartyDistributionChannels": [],
+        },
+
+        "content": {
+            "article": article
+        },
+
+        "lifecycleState": "PUBLISHED",
+
+        "isReshareDisabledByAuthor": False,
+    }
+
+    # --------------------------------------------------------
+    # Create post
+    # --------------------------------------------------------
+
+    await ctx.info("Creating article post...")
+
+    response = requests.post(
+        f"{api_base}/rest/posts",
+        headers=headers,
+        json=payload,
+        timeout=30,
+    )
+
+    if not response.ok:
+        await ctx.error(f"Error creating article post: {response.status_code} - {response.text}")
+    
+    response.raise_for_status()
+
+    post_urn = response.headers.get("x-restli-id")
+
+    await ctx.info(f"Post URN: {post_urn}")
+
+    return {
+        "success": True,
+        "post_urn": post_urn,
+        "source_url": source_url,
+        "message": "Article post created successfully.",
+    }
