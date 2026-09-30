@@ -893,3 +893,73 @@ async def create_article_post(source_url: str,commentary: str,title: str,descrip
         "source_url": source_url,
         "message": "Article post created successfully.",
     }
+
+
+@tool
+async def update_post(post_urn: str, new_text: str, tokens: dict = Depends(LinkedInTokens)) -> dict:
+    """
+    Update the text of an existing LinkedIn post.
+
+    Parameters
+    ----------
+    post_urn:
+        The URN of the post to update (e.g., "urn:li:share:123456789").
+
+    new_text:
+        The new text content for the post.
+    """
+    ctx=get_context()
+    access_token = tokens.get("access_token")
+    api_version = tokens.get("version", "202609")
+    headers = tokens.get("header")
+    api_base = tokens.get("api_base")
+
+    if not access_token:
+        await ctx.warning("LinkedIn access token is not set.")
+        return {"success": False, "message": "LinkedIn access token is not set."}
+    
+    if not api_version:
+        await ctx.warning("LinkedIn API version is not set.")
+        return {"success": False, "message": "LinkedIn API version is not set."}
+
+    encoded_post_urn = requests.utils.quote(post_urn,safe="")
+    
+    url = (
+        f"{api_base}/rest/posts/"
+        f"{encoded_post_urn}"
+    )
+    payload = {
+        "patch": {
+            "$set": {
+                "commentary": new_text
+            }
+        }
+    }
+
+    await ctx.info("UPDATING LINKEDIN POST")
+
+    await ctx.info(f"Post: {post_urn}")
+    await ctx.info(f"New text: {new_text}")
+
+    response = requests.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=30,
+    )
+
+    if not response.ok:
+        await ctx.error(f"UPDATE ERROR: Status: {response.status_code}, Response: {response.text}")
+    response.raise_for_status()
+
+    await ctx.info("Post updated successfully.")
+
+    return {
+        "success": True,
+        "post_urn": post_urn,
+        "status_code": response.status_code,
+        "message": "Post updated successfully.",
+    }
+    
+
+
