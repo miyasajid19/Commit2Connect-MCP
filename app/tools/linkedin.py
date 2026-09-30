@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
+from typing import Literal
 load_dotenv()
 
 def LinkedInTokens()->dict:
@@ -270,8 +271,6 @@ async def create_multi_image_post(
     
 
 
-from pydantic import BaseModel, Field
-from typing import Literal
 @tool
 # async def create_poll(question: str,options: list[str],duration: Literal["ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", "FOURTEEN_DAYS"]="THREE_DAYS",commentary: str = "", tokens:dict=Depends(LinkedInTokens))->dict:
 async def create_poll(question: str,options: list[str],duration: Literal["ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", "FOURTEEN_DAYS"]="THREE_DAYS",commentary: str = "", tokens:dict=Depends(LinkedInTokens))->dict:
@@ -399,4 +398,109 @@ async def create_poll(question: str,options: list[str],duration: Literal["ONE_DA
         "question": question,
         "options": options,
         "duration": duration,
+    }
+    
+
+
+
+def upload_document(file_path:str,headers:dict,author:str,access_token:str)->str:
+    init_payload = {
+        "initializeUploadRequest": {
+            "owner": author
+        }
+    }
+
+    init_response = requests.post(
+        "https://api.linkedin.com/rest/documents?action=initializeUpload",
+        headers=headers,
+        json=init_payload,
+        timeout=30,
+    )
+    init_response.raise_for_status()
+
+    init_data = init_response.json()
+    upload_url = init_data["value"]["uploadUrl"]
+    document_urn = init_data["value"]["document"]
+
+    with open(file_path, "rb") as file:
+        upload_response = requests.put(
+            upload_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            data=file,
+            timeout=120,
+        )
+    upload_response.raise_for_status()
+
+    return document_urn
+
+@tool
+async def create_document_post(file_path:str, content:str, title:str="Document",tokens:dict=Depends(LinkedInTokens))->dict:
+    ctx=get_context()
+    access_token=tokens.get("access_token")
+    api_version=tokens.get("version","202609")
+    person_id=tokens.get("person_id")
+    author=f"urn:li:person:{person_id}"
+    if not access_token:
+        await ctx.warning("LinkedIn access token is not set.")
+        return {"error": "LinkedIn access token is not set."}
+    
+    if not api_version:
+        await ctx.warning("LinkedIn API version is not set.")
+        return {"error": "LinkedIn API version is not set."}
+    
+    if not os.path.isfile(file_path):
+        await ctx.warning(f"File not found: {file_path}")
+        return {"error": f"File not found: {file_path}"}
+    
+    headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Linkedin-Version": api_version,
+            "X-Restli-Protocol-Version": "2.0.0",
+            "Content-Type": "application/json",
+        }
+    
+    # ---------------------------------------------------------
+    # 2. Initialize document upload and upload document bytes
+    # ---------------------------------------------------------
+
+    document_urn = upload_document(file_path, headers, author, access_token)
+
+    # ---------------------------------------------------------
+    # 4. Create LinkedIn document post
+    # ---------------------------------------------------------
+
+    post_payload = {
+        "author": author,
+        "commentary": content,
+        "visibility": "PUBLIC",
+        "distribution": {
+            "feedDistribution": "MAIN_FEED",
+            "targetEntities": [],
+            "thirdPartyDistributionChannels": [],
+        },
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
+        "content": {
+            "media": {
+                "title": title,
+                "id": document_urn,
+            }
+        },
+    }
+
+    post_response = requests.post(
+        "https://api.linkedin.com/rest/posts",
+        headers=headers,
+        json=post_payload,
+        timeout=30,
+    )
+
+    ctx.info(f"LinkedIn document post creation response: {post_response.status_code} - {post_response.text}")
+    
+    post_response.raise_for_status()
+
+    return {
+        "success": True,
+        "post_urn": post_response.headers.get("x-restli-id"),
+        "document_urn": document_urn,
     }
