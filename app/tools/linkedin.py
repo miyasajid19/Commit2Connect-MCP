@@ -963,3 +963,61 @@ async def update_post(post_urn: str, new_text: str, tokens: dict = Depends(Linke
     
 
 
+@tool
+async def delete_post(post_urn: str,tokens: dict = Depends(LinkedInTokens)) -> dict:
+    """
+    Delete a LinkedIn post.
+
+    Example:
+        urn:li:share:123456789
+        urn:li:ugcPost:123456789
+    """
+    ctx=get_context()
+    access_token = tokens.get("access_token")
+    api_version = tokens.get("version", "202609")
+    headers = tokens.get("header")
+    api_base = tokens.get("api_base")
+
+    if not access_token:
+        raise RuntimeError(
+            "LINKEDIN_ACCESS_TOKEN is missing."
+        )
+
+    if not post_urn:
+        raise ValueError(
+            "post_urn is required."
+        )
+
+    # LinkedIn requires the URN to be URL encoded
+    encoded_post_urn = requests.utils.quote(
+        post_urn,
+        safe=""
+    )
+
+    url = (
+        f"{api_base}/rest/posts/"
+        f"{encoded_post_urn}"
+    )
+
+
+    await ctx.info(f"Deleting LinkedIn post with URN: {post_urn}")
+    response = requests.delete(
+        url,
+        headers=headers,
+        timeout=30,
+    )
+    await ctx.info(f"DELETE REQUEST: {url}")
+
+    if not response.ok:
+        await ctx.error(f"DELETE ERROR: Status: {response.status_code}, Response: {response.text}")
+
+    response.raise_for_status()
+
+    await ctx.info(f"Post deleted successfully. Status: {response.status_code}")
+
+    return {
+        "success": True,
+        "post_urn": post_urn,
+        "status_code": response.status_code,
+        "message": "Post deleted successfully.",
+    }
