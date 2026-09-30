@@ -7,12 +7,27 @@ from fastmcp.server.dependencies import get_context
 from typing import Literal
 load_dotenv()
 
+
+def api_headers():
+    return 
+
+
 def LinkedInTokens()->dict:
     return {
         "access_token": os.getenv("LINKEDIN_ACCESS_TOKEN"),
         "version": os.getenv("LINKEDIN_API_VERSION", "202609"),
-        "person_id":"HN5UaSrPTM"
+        "person_id":"HN5UaSrPTM",
+        "api_base": os.getenv("LINKEDIN_API_BASE", "https://api.linkedin.com"),
+        "header":{
+        "Authorization": f"Bearer {os.getenv('LINKEDIN_ACCESS_TOKEN')}",
+        "Linkedin-Version": os.getenv("LINKEDIN_API_VERSION", "202609"),
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Content-Type": "application/json",
+    
+        }
     }
+
+
 
 @tool
 async def get_profile(tokens:dict=Depends(LinkedInTokens))->dict:
@@ -91,12 +106,7 @@ async def create_text_post(content:str, tokens:dict=Depends(LinkedInTokens))->di
     
     response = requests.post(
         "https://api.linkedin.com/rest/posts",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Linkedin-Version": version,
-            "X-Restli-Protocol-Version": "2.0.0",
-            "Content-Type": "application/json",
-        },
+        headers=tokens.get("header"),
         json={
             "author": f"urn:li:person:{person_id}",
             "commentary": content,
@@ -503,4 +513,179 @@ async def create_document_post(file_path:str, content:str, title:str="Document",
         "success": True,
         "post_urn": post_response.headers.get("x-restli-id"),
         "document_urn": document_urn,
+    }
+    
+    
+def _initialize_video_upload(api_base, headers, author, file_size):
+    response = requests.post(
+        f"{api_base}/rest/videos?action=initializeUpload",
+        headers=headers,
+        json={"initializeUploadRequest": {
+            "owner": author,
+            "fileSizeBytes": file_size,
+            "uploadCaptions": False,
+            "uploadThumbnail": False,
+        }},
+        timeout=30,
+    )
+    response.raise_for_status()
+    value = response.json()["value"]
+    return value["video"], value.get("uploadToken", ""), value["uploadInstructions"]
+
+
+def _upload_video_parts(file_path, file_size, instructions):
+    part_ids = []
+    with open(file_path, "rb") as video_file:
+        for instruction in instructions:
+            first = instruction["firstByte"]
+            last = instruction["lastByte"]
+            video_file.seek(first)
+            response = requests.put(
+                instruction["uploadUrl"],
+                headers={
+                    "Content-Type": "application/octet-stream",
+                    "Content-Range": f"bytes {first}-{last}/{file_size}",
+                },
+                data=video_file.read(last - first + 1),
+                timeout=300,
+            )
+            response.raise_for_status()
+            etag = response.headers.get("ETag")
+            if not etag:
+                raise RuntimeError("LinkedIn did not return an ETag for an uploaded part")
+            part_ids.append(etag.strip('"'))
+    return part_ids
+
+
+def _finalize_video_upload(api_base, headers, video_urn, upload_token, part_ids):
+    response = requests.post(
+        f"{api_base}/rest/videos?action=finalizeUpload",
+        headers=headers,
+        json={"finalizeUploadRequest": {
+            "video": video_urn,
+            "uploadToken": upload_token,
+            "uploadedPartIds": part_ids,
+        }},
+        timeout=30,
+    )
+    response.raise_for_status()
+
+
+def _create_video_post(api_base, headers, author, video_urn, commentary, title):
+    response = requests.post(
+        f"{api_base}/rest/posts",
+        headers=headers,
+        json={
+            "author": author,
+            "commentary": commentary,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
+            },
+            "content": {"media": {"title": title, "id": video_urn}},
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.headers.get("x-restli-id")
+
+
+async def _upload_video_parts(ctx, file_path, instructions, file_size):
+    uploaded_part_ids = []
+    with open(file_path, "rb") as video_file:
+        for index, instruction in enumerate(instructions, start=1):
+            first_byte = instruction["firstByte"]
+            last_byte = instruction["lastByte"]
+            video_file.seek(first_byte)
+            chunk = video_file.read(last_byte - first_byte + 1)
+
+            await ctx.info(
+                f"  Part {index}/{len(instructions)}: "
+                f"{first_byte:,} - {last_byte:,}"
+            )
+            upload_response = requests.put(
+                instruction["uploadUrl"],
+                headers={
+                    "Content-Type": "application/octet-stream",
+                    "Content-Range": f"bytes {first_byte}-{last_byte}/{file_size}",
+                },
+                data=chunk,
+                timeout=300,
+            )
+            if not upload_response.ok:
+                await ctx.error("Status:", upload_response.status_code)
+                await ctx.error("Response:", upload_response.text)
+            upload_response.raise_for_status()
+
+            etag = upload_response.headers.get("ETag")
+            if not etag:
+                await ctx.error(f"No ETag returned for part {index}")
+                raise RuntimeError(f"No ETag returned for part {index}")
+            etag = etag.strip('"')
+            uploaded_part_ids.append(etag)
+        await ctx.info(f"  Uploaded successfully (ETag: {etag})")
+    return uploaded_part_ids
+
+
+@tool
+async def create_video_post(file_path:str,commentary:str="",title:str="Video",tokens:dict=Depends(LinkedInTokens))->dict:
+    ctx=get_context()
+    access_token=tokens.get("access_token")
+    api_version=tokens.get("version","202609")
+    person_id=tokens.get("person_id")
+    author=f"urn:li:person:{person_id}"
+    headers=tokens.get("header")
+    api_base=tokens.get("api_base")
+    if not access_token:
+        await ctx.warning("LinkedIn access token is not set.")
+        return {"error": "LinkedIn access token is not set."}
+    
+    if not api_version:
+        await ctx.warning("LinkedIn API version is not set.")
+        return {"error": "LinkedIn API version is not set."}
+    
+    if not os.path.isfile(file_path):
+        await ctx.warning(f"File not found: {file_path}")
+        return {"error": f"File not found: {file_path}"}
+    
+    file_size = os.path.getsize(file_path)
+    await ctx.info(f"Video file size: {file_size/(1024*1024):.2f} MB")
+    
+    await ctx.info(f"[1/4] Uploading video file: {file_path}")
+    video_urn, upload_token, instructions = _initialize_video_upload(
+        api_base, headers, author, file_size
+    )
+    await ctx.info(f"Video upload initialized. Video URN: {video_urn}")
+
+    await ctx.info("\n[2/4] Uploading video parts...")
+    uploaded_part_ids = await _upload_video_parts(
+        ctx, file_path, instructions, file_size
+    )
+    await ctx.info("All Parts Uploaded Successfully.")
+    await ctx.info("\n[3/4] Finalizing video upload...")
+    
+    _finalize_video_upload(
+        api_base, headers, video_urn, upload_token, uploaded_part_ids
+    )
+    await ctx.info("Video upload finalized successfully.")
+    
+    await ctx.info("\n[4/4] Creating LinkedIn video post...")
+    
+    
+    post_urn = _create_video_post(
+        api_base, headers, author, video_urn, commentary, title
+    )
+
+    await ctx.info(f"Video post created successfully. Post URN: {post_urn} with Video URN: {video_urn}")
+
+
+    return {
+        "success": True,
+        "video_urn": video_urn,
+        "post_urn": post_urn,
+        "message": "Video post created successfully.",
     }
