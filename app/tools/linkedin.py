@@ -689,3 +689,99 @@ async def create_video_post(file_path:str,commentary:str="",title:str="Video",to
         "post_urn": post_urn,
         "message": "Video post created successfully.",
     }
+
+
+@tool
+async def create_image_post(file_path: str,commentary: str = "",alt_text: str = "",tokens: dict = Depends(LinkedInTokens)) -> dict:
+    """
+    Upload an image to LinkedIn and publish it as a post.
+
+    Parameters
+    ----------
+    file_path:
+        Local path to JPG, PNG, or GIF image.
+
+    commentary:
+        Text accompanying the image.
+
+    alt_text:
+        Accessibility description for the image.
+    """
+    ctx=get_context()
+    access_token = tokens.get("access_token")
+    api_version = tokens.get("version","202609")
+    person_id = tokens.get("person_id")
+    author = f"urn:li:person:{person_id}"
+    headers = tokens.get("header")
+    api_base = tokens.get("api_base")
+    
+    if not access_token:
+        await ctx.warning("LinkedIn access token is not set.")
+        return {"error": "LinkedIn access token is not set."}
+    if not api_version:
+        await ctx.warning("LinkedIn API version is not set.")
+        return {"error": "LinkedIn API version is not set."}
+    if not os.path.isfile(file_path):
+        await ctx.warning(f"File not found: {file_path}")
+        return {"error": f"File not found: {file_path}"}
+    file_size = os.path.getsize(file_path)
+    if file_size<=0:
+        await ctx.warning(f"File is empty: {file_path}")
+        return {"error": f"File is empty: {file_path}"}
+    await ctx.info(f"Image file size: {file_size/(1024*1024):.2f} MB")
+    
+    await ctx.info("\n[1/3] Uploading image...")
+    image_urn = upload_image(file_path, headers, author, access_token)
+    await ctx.info(f"Image uploaded successfully. Image URN: {image_urn}")
+
+    # ========================================================
+    # 5. Create LinkedIn post
+    # ========================================================
+
+    await ctx.info("[3/3] Creating LinkedIn post...")
+
+    post_payload = {
+        "author": author,
+        "commentary": commentary,
+        "visibility": "PUBLIC",
+        "distribution": {
+            "feedDistribution": "MAIN_FEED",
+            "targetEntities": [],
+            "thirdPartyDistributionChannels": [],
+        },
+        "content": {
+            "media": {
+                "altText": alt_text,
+                "id": image_urn,
+            }
+        },
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
+    }
+
+    post_response = requests.post(
+        f"{api_base}/rest/posts",
+        headers=headers,
+        json=post_payload,
+        timeout=30, 
+    )
+
+    if not post_response.ok:
+        await ctx.error(f"Post creation failed with status {post_response.status_code}: {post_response.text}")
+
+    post_response.raise_for_status()
+
+    post_urn = post_response.headers.get(
+        "x-restli-id"
+    )
+
+    await ctx.info(f"LinkedIn post created successfully. Post URN: {post_urn} with Image URN: {image_urn}")
+
+    await ctx.info(f"Post creation response: {post_response.status_code} - {post_response.text}")
+
+    return {
+        "success": True,
+        "image_urn": image_urn,
+        "post_urn": post_urn,
+        "message": "Image post created successfully.",
+    }
