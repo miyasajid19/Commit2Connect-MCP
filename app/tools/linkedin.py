@@ -268,3 +268,135 @@ async def create_multi_image_post(
         "images": image_urns,
     }
     
+
+
+from pydantic import BaseModel, Field
+from typing import Literal
+@tool
+# async def create_poll(question: str,options: list[str],duration: Literal["ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", "FOURTEEN_DAYS"]="THREE_DAYS",commentary: str = "", tokens:dict=Depends(LinkedInTokens))->dict:
+async def create_poll(question: str,options: list[str],duration: Literal["ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", "FOURTEEN_DAYS"]="THREE_DAYS",commentary: str = "", tokens:dict=Depends(LinkedInTokens))->dict:
+    """
+    Create a LinkedIn poll post for the authenticated member.
+
+    This tool validates the poll configuration, fetches the authenticated
+    member's LinkedIn person URN from the OpenID Connect profile endpoint, and
+    publishes a poll to the LinkedIn REST Posts API with the supplied question,
+    options, duration, and optional commentary.
+
+    LinkedIn poll constraints enforced here:
+        - Question length must be 140 characters or fewer.
+        - Poll must include between 2 and 4 options.
+        - Each option text must be 30 characters or fewer.
+        - The poll duration must be one of the supported LinkedIn values:
+          "ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", or "FOURTEEN_DAYS".
+
+    Args:
+        question (str): The poll question to display to viewers. Must be 140
+            characters or fewer.
+        options (list[str]): A list of poll answer choices. Must contain 2 to 4
+            values, and each value must be 30 characters or fewer.
+        duration (Literal[...], optional): How long the poll should remain open.
+            Defaults to "THREE_DAYS".
+        commentary (str, optional): Optional text to accompany the poll post.
+            This is the post body text shown alongside the poll.
+        tokens (dict, optional): Dependency-injected LinkedIn authentication
+            settings. Expected to contain an ``access_token`` and optional
+            ``version`` values.
+
+    Returns:
+        dict: A dictionary containing:
+            - ``success``: True if the poll was published successfully.
+            - ``post_urn``: The LinkedIn REST post ID / URN returned by the API.
+            - ``question``: The original poll question.
+            - ``options``: The original list of answer choices.
+            - ``duration``: The selected poll duration.
+
+        If validation fails or the access token is missing, the function returns
+        a dictionary with an ``error`` key describing the problem.
+
+    Notes:
+        - The function calls ``https://api.linkedin.com/v2/userinfo`` to resolve
+          the authenticated member ID.
+        - The poll is published to ``https://api.linkedin.com/rest/posts`` using
+          the owner's person URN and LinkedIn's required POST payload schema.
+        - Any HTTP errors raised by LinkedIn are surfaced via
+          ``response.raise_for_status()``.
+    """
+    ctx=get_context()
+    access_token = tokens.get("access_token")
+    api_version = tokens.get("version", "202609")
+    
+    if not access_token:
+        await ctx.warning("LinkedIn access token is not set.")
+        return {"error": "LinkedIn access token is not set."}
+    
+    if not api_version:
+        await ctx.warning("LinkedIn API version is not set.")
+        return {"error": "LinkedIn API version is not set."}
+    
+    if len(options) < 2 or len(options) > 4:
+        await ctx.warning("Poll must have between 2 and 4 options.")
+        return {"error": "Poll must have between 2 and 4 options."}
+    
+    for option in options:
+        if len(option) > 30:
+            await ctx.warning("Each poll option must be 30 characters or fewer.")
+            return {"error": "Each poll option must be 30 characters or fewer."}
+        
+    if len(question) > 140:
+        await ctx.warning("Poll question must be 140 characters or fewer.")
+        return {"error": "Poll question must be 140 characters or fewer."}
+    
+    
+    person_id = tokens.get("person_id") 
+    author = f"urn:li:person:{person_id}"
+
+    payload = {
+        "author": author,
+        "commentary": commentary,
+        "visibility": "PUBLIC",
+        "distribution": {
+            "feedDistribution": "MAIN_FEED",
+            "targetEntities": [],
+            "thirdPartyDistributionChannels": [],
+        },
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
+        "content": {
+            "poll": {
+                "question": question,
+                "options": [
+                    {"text": option}
+                    for option in options
+                ],
+                "settings": {
+                    "duration": duration,
+                    "voteSelectionType": "SINGLE_VOTE",
+                    "isVoterVisibleToAuthor": True,
+                },
+            }
+        },
+    }
+
+    response = requests.post(
+        "https://api.linkedin.com/rest/posts",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Linkedin-Version": api_version,
+            "X-Restli-Protocol-Version": "2.0.0",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=30,
+    )
+
+    await ctx.info(f"LinkedIn poll creation response: {response.status_code} - {response.text}")
+    response.raise_for_status()
+
+    return {
+        "success": True,
+        "post_urn": response.headers.get("x-restli-id"),
+        "question": question,
+        "options": options,
+        "duration": duration,
+    }
