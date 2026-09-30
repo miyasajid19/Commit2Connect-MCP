@@ -11,4 +11,5 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "itsdangerous>=2.1",
     "fastmcp>=3.4.7",
+    "requests>=2.34.2",
 ]
