@@ -126,3 +126,104 @@ async def get_repository(owner: str, repo: str,tokens=Depends(GitHubTokens))-> d
         "forks": data["forks_count"],
         "open_issues": data["open_issues_count"],
     }
+    
+
+
+
+@tool
+async def list_repositories(
+    visibility: str = "all",
+    affiliation: str = "owner,collaborator,organization_member",
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens)
+):
+    """
+    List repositories accessible to the authenticated GitHub user.
+
+    Args:
+        visibility:
+            all, public, or private.
+
+        affiliation:
+            Comma-separated values:
+            owner, collaborator, organization_member.
+
+        per_page:
+            Number of repositories to return (1-100).
+
+        page:
+            Page number.
+        tokens: dict = Depends(GitHubTokens)
+
+    Returns:
+        List of repositories and pagination information.
+    """
+
+    ctx=get_context()
+    accesss_token = tokens["access_token"]
+
+    if not accesss_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100")
+        return {"success": False, "error": "per_page must be between 1 and 100"}
+
+    if page < 1:
+        await ctx.error("page must be >= 1")
+        return {"success": False, "error": "page must be >= 1"}
+
+    headers = tokens["headers"]
+
+    params = {
+        "visibility": visibility,
+        "affiliation": affiliation,
+        "per_page": per_page,
+        "page": page,
+        "sort": "updated",
+        "direction": "desc",
+    }
+
+    response = requests.get(
+        "https://api.github.com/user/repos",
+        headers=headers,
+        params=params,
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    repositories = response.json()
+    await ctx.log(f"Retrieved {len(repositories)} repositories for user.")
+    return {
+        "success": True,
+        "count": len(repositories),
+        "page": page,
+        "per_page": per_page,
+        "repositories": [
+            {
+                "id": repo["id"],
+                "name": repo["name"],
+                "full_name": repo["full_name"],
+                "description": repo["description"],
+                "private": repo["private"],
+                "visibility": repo["visibility"],
+                "default_branch": repo["default_branch"],
+                "html_url": repo["html_url"],
+                "clone_url": repo["clone_url"],
+                "ssh_url": repo["ssh_url"],
+                "language": repo["language"],
+                "fork": repo["fork"],
+                "archived": repo["archived"],
+                "stars": repo["stargazers_count"],
+                "forks": repo["forks_count"],
+                "open_issues": repo["open_issues_count"],
+                "updated_at": repo["updated_at"],
+            }
+            for repo in repositories
+        ],
+    }
+    
+ 
