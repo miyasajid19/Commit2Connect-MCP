@@ -258,3 +258,110 @@ async def list_pull_requests(
             for pr in raw_prs
         ],
     }
+
+
+
+@tool
+async def get_pull_request(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Get details of a GitHub pull request.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the pull request details (state, mergeability,
+        head/base branch info, commit/file stats, timestamps, and links), or
+        an error payload when the access token is missing, the pull request
+        number is invalid, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    try:
+        response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}",
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to get pull request #{pull_number} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+
+    await ctx.log(
+        f"Retrieved pull request #{data['number']} in {owner}/{repo} "
+        f"(state={data.get('state')})"
+    )
+
+    return {
+        "success": True,
+        "number": data["number"],
+        "title": data["title"],
+        "body": data["body"],
+        "state": data["state"],
+        "draft": data["draft"],
+        "merged": data["merged"],
+        "mergeable": data["mergeable"],
+        "mergeable_state": data["mergeable_state"],
+        "head": {
+            "branch": data["head"]["ref"],
+            "sha": data["head"]["sha"],
+            "repo": data["head"]["repo"]["full_name"]
+            if data["head"]["repo"]
+            else None,
+        },
+        "base": {
+            "branch": data["base"]["ref"],
+            "sha": data["base"]["sha"],
+            "repo": data["base"]["repo"]["full_name"]
+            if data["base"]["repo"]
+            else None,
+        },
+        "author": data["user"]["login"] if data.get("user") else None,
+        "labels": [label["name"] for label in data.get("labels", [])],
+        "url": data["html_url"],
+        "created_at": data["created_at"],
+        "updated_at": data["updated_at"],
+        "closed_at": data.get("closed_at"),
+        "merged_at": data.get("merged_at"),
+        "commits": data["commits"],
+        "changed_files": data["changed_files"],
+        "additions": data["additions"],
+        "deletions": data["deletions"],
+    }
