@@ -401,5 +401,77 @@ async def list_branches(
             }
             for branch in raw_branches
         ],
-    } 
-    
+    }
+
+
+@tool
+async def delete_branch(
+    owner: str,
+    repo: str,
+    branch: str,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Delete a GitHub branch.
+
+    Deleting a branch deletes the ref pointing at its tip commit. The commits
+    themselves are not removed from the repository unless garbage-collected.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        branch: Branch name to delete (e.g. "feature/contributing-guide").
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary confirming the deletion, or an error payload when the
+        access token is missing, the branch name is empty, the branch is the
+        repository's default branch, the branch is protected, or the request
+        fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if not branch.strip():
+        await ctx.error("Branch name cannot be empty.")
+        return {"success": False, "error": "Branch name cannot be empty."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    try:
+        response = requests.delete(
+            f"{api_url}/repos/{owner}/{repo}/git/refs/heads/{branch}",
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to delete branch '{branch}' in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    await ctx.log(f"Deleted branch '{branch}' from {owner}/{repo}")
+
+    return {
+        "success": True,
+        "branch": branch,
+        "message": f"Branch '{branch}' deleted successfully from {owner}/{repo}.",
+    }
