@@ -350,3 +350,37 @@ async def update_repository(
     }
 
 
+@tool    
+async def delete_repository(
+    owner: str,
+    repo: str,
+    tokens: dict = Depends(GitHubTokens)
+):
+    """
+    Delete a GitHub repository.
+
+    This operation is permanent.
+    """
+
+    ctx = get_context()
+    access_token = tokens["access_token"]
+
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    headers =tokens["headers"]
+
+    response = requests.delete(
+        f"https://api.github.com/repos/{owner}/{repo}",
+        headers=headers,
+        timeout=30,
+    )
+
+    response.raise_for_status()
+    await ctx.log(f"Repository '{owner}/{repo}' deleted successfully.")
+    return {
+        "success": True,
+        "message": f"Repository '{owner}/{repo}' deleted successfully.",
+    }
