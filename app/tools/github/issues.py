@@ -319,3 +319,161 @@ async def close_issue(
         "state_reason": data.get("state_reason"),
         "url": data["html_url"],
     }
+
+
+@tool
+async def list_issues(
+    owner: str,
+    repo: str,
+    state: str = "open",
+    labels: str | None = None,
+    assignee: str | None = None,
+    creator: str | None = None,
+    mentioned: str | None = None,
+    sort: str = "created",
+    direction: str = "desc",
+    since: str | None = None,
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    List issues in a GitHub repository.
+
+    Pull requests are excluded by default — pass ``include_pulls=True`` to
+    include them.
+
+    Args:
+        owner: GitHub username or organization.
+        repo: Repository name.
+        state:
+            Filter by state: "open", "closed", or "all".
+        labels:
+            Comma-separated list of label names (e.g. "bug,ui").
+        assignee:
+            GitHub username. Use ``"*"`` for issues assigned to any user, or
+            ``"none"`` for unassigned issues.
+        creator:
+            Filter by the username that created the issues.
+        mentioned:
+            Filter by a username mentioned in the issues.
+        sort:
+            What to sort by: "created", "updated", or "comments".
+        direction:
+            Sort direction: "asc" or "desc".
+        since:
+            ISO 8601 timestamp. Only issues updated at or after this time are
+            returned.
+        per_page:
+            Number of issues per page (1-100).
+        page:
+            Page number to retrieve.
+        tokens:
+            Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the list of issues with pagination metadata, or
+        an error payload when validation fails, the access token is missing,
+        or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if state not in ["open", "closed", "all"]:
+        await ctx.error("state must be 'open', 'closed', or 'all'.")
+        return {"success": False, "error": "state must be 'open', 'closed', or 'all'."}
+
+    if sort not in ["created", "updated", "comments"]:
+        await ctx.error("sort must be 'created', 'updated', or 'comments'.")
+        return {"success": False, "error": "sort must be 'created', 'updated', or 'comments'."}
+
+    if direction not in ["asc", "desc"]:
+        await ctx.error("direction must be 'asc' or 'desc'.")
+        return {"success": False, "error": "direction must be 'asc' or 'desc'."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+
+    params = {
+        "state": state,
+        "sort": sort,
+        "direction": direction,
+        "per_page": per_page,
+        "page": page,
+    }
+
+    if labels:
+        params["labels"] = labels
+    if assignee:
+        params["assignee"] = assignee
+    if creator:
+        params["creator"] = creator
+    if mentioned:
+        params["mentioned"] = mentioned
+    if since:
+        params["since"] = since
+
+    try:
+        response = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/issues",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        await ctx.error(f"Failed to list issues in {owner}/{repo}: {e}")
+        return {"success": False, "error": str(e)}
+
+    raw_issues = response.json()
+
+    # Exclude pull requests — they're returned by this endpoint too.
+    issues = [
+        issue for issue in raw_issues if "pull_request" not in issue
+    ]
+    pulls_excluded = len(raw_issues) - len(issues)
+
+    await ctx.log(
+        f"Retrieved {len(issues)} {state} issues from {owner}/{repo} "
+        f"(page {page}, {pulls_excluded} pull requests excluded)"
+    )
+
+    return {
+        "success": True,
+        "count": len(issues),
+        "page": page,
+        "per_page": per_page,
+        "pull_requests_excluded": pulls_excluded,
+        "issues": [
+            {
+                "issue_number": issue["number"],
+                "title": issue["title"],
+                "state": issue["state"],
+                "user": issue["user"]["login"] if issue.get("user") else None,
+                "labels": [label["name"] for label in issue.get("labels", [])],
+                "assignees": [
+                    user["login"]
+                    for user in issue.get("assignees", [])
+                ],
+                "comments": issue["comments"],
+                "created_at": issue["created_at"],
+                "updated_at": issue["updated_at"],
+                "closed_at": issue.get("closed_at"),
+                "url": issue["html_url"],
+            }
+            for issue in issues
+        ],
+    }
+ 
