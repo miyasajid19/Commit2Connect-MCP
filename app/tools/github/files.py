@@ -155,3 +155,78 @@ async def create_file(
         "commit_sha": data["commit"]["sha"],
         "url": data["content"]["html_url"],
     }
+
+
+@tool
+async def update_file(
+    owner: str,
+    repo: str,
+    path: str,
+    content: str,
+    message: str,
+    sha: str,
+    branch: str | None = None,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Update an existing file in a GitHub repository.
+
+    Args:
+        owner: GitHub username or organization.
+        repo: Repository name.
+        path: File path inside the repository.
+        content: New file content.
+        message: Commit message.
+        sha: Current SHA of the file being updated.
+        branch: Optional branch name.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing updated file and commit information, or an error
+        payload when the access token is missing or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    headers = tokens["headers"]
+
+    payload = {
+        "message": message,
+        "content": base64.b64encode(
+            content.encode("utf-8")
+        ).decode("utf-8"),
+        "sha": sha,
+    }
+
+    if branch:
+        payload["branch"] = branch
+
+    try:
+        response = requests.put(
+            f"https://api.github.com/repos/{owner}/{repo}/contents/{path}",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        await ctx.error(f"Failed to update file {path} in {owner}/{repo}: {e}")
+        return {"success": False, "error": str(e)}
+
+    data = response.json()
+
+    await ctx.log(f"Updated file {data['content']['path']} in {owner}/{repo}")
+
+    return {
+        "success": True,
+        "message": message,
+        "path": data["content"]["path"],
+        "sha": data["content"]["sha"],
+        "commit_sha": data["commit"]["sha"],
+        "url": data["content"]["html_url"],
+    }
