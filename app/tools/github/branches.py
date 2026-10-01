@@ -177,3 +177,126 @@ async def get_branch_sha(
         "branch": branch,
         "sha": sha,
     }
+    
+
+@tool
+async def create_branch(
+    owner: str,
+    repo: str,
+    branch: str,
+    source_branch: str,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Create a new GitHub branch from an existing branch.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        branch: Name of the new branch to create (e.g. "feature/contributing-guide").
+        source_branch: Name of the existing branch to branch from (e.g. "main").
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the new branch ref details, or an error payload
+        when the access token is missing, the source branch cannot be
+        resolved, the new branch name is empty, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if not branch.strip():
+        await ctx.error("New branch name cannot be empty.")
+        return {"success": False, "error": "New branch name cannot be empty."}
+
+    if not source_branch.strip():
+        await ctx.error("Source branch name cannot be empty.")
+        return {"success": False, "error": "Source branch name cannot be empty."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    # Step 1: look up the SHA of the source branch.
+    try:
+        sha_response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/git/ref/heads/{source_branch}",
+            headers=headers,
+            timeout=30,
+        )
+        sha_response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to resolve SHA for source branch '{source_branch}' "
+            f"in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "stage": "resolve_source_sha",
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    source_sha = sha_response.json()["object"]["sha"]
+
+    # Step 2: create the new branch ref pointing at that SHA.
+    payload = {
+        "ref": f"refs/heads/{branch}",
+        "sha": source_sha,
+    }
+
+    try:
+        response = requests.post(
+            f"{api_url}/repos/{owner}/{repo}/git/refs",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to create branch '{branch}' from '{source_branch}' "
+            f"in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "stage": "create_ref",
+            "source_sha": source_sha,
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+
+    await ctx.log(
+        f"Created branch '{branch}' from '{source_branch}' "
+        f"in {owner}/{repo} (sha {data['object']['sha'][:7]})"
+    )
+
+    return {
+        "success": True,
+        "branch": branch,
+        "source_branch": source_branch,
+        "source_sha": source_sha,
+        "ref": data.get("ref"),
+        "sha": data["object"]["sha"],
+        "url": data["object"].get("url"),
+    }
