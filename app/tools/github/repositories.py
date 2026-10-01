@@ -694,3 +694,139 @@ async def search_code(
         "count": len(items),
         "results": results,
     }
+
+
+@tool
+async def search_users(
+    query: str,
+    sort: str | None = None,
+    order: str = "desc",
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Search for GitHub users matching a query string.
+
+    Common qualifiers:
+        - ``user:username`` — exact username match.
+        - ``type:user`` / ``type:org`` — limit to user or organization
+          accounts.
+        - ``in:email`` — search by email address (requires the token to have
+          the ``user:email`` scope, otherwise GitHub returns 422).
+        - ``followers:>100`` — minimum follower count.
+        - ``repos:>10`` — minimum public-repo count.
+        - ``location:city`` — filter by declared location.
+        - ``language:python`` — primary language of the user's repos.
+
+    Args:
+        query: Search query string.
+        sort: Optional sort field: "followers", "repositories", or "joined".
+            Omit for default relevance ranking.
+        order: Sort direction: "asc" or "desc".
+        per_page: Number of results per page (1-100).
+        page: Page number to retrieve.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the search results with pagination metadata, or
+        an error payload when the access token is missing, the query is
+        empty, sort/order/per_page/page validation fails, or the request
+        fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if not query.strip():
+        await ctx.error("Search query cannot be empty.")
+        return {"success": False, "error": "Search query cannot be empty."}
+
+    if sort is not None and sort not in ["followers", "repositories", "joined"]:
+        await ctx.error("sort must be one of: followers, repositories, joined.")
+        return {
+            "success": False,
+            "error": "sort must be one of: followers, repositories, joined.",
+        }
+
+    if order not in ["asc", "desc"]:
+        await ctx.error("order must be 'asc' or 'desc'.")
+        return {"success": False, "error": "order must be 'asc' or 'desc'."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    params = {
+        "q": query,
+        "per_page": per_page,
+        "page": page,
+        "order": order,
+    }
+
+    if sort:
+        params["sort"] = sort
+
+    try:
+        response = requests.get(
+            f"{api_url}/search/users",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(f"User search failed for query '{query}': {e} | {body}")
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+    items = data.get("items", [])
+
+    await ctx.log(
+        f"User search for '{query}' returned {len(items)} result(s) "
+        f"(page {page}, {data.get('total_count', 0)} total)"
+    )
+
+    return {
+        "success": True,
+        "query": query,
+        "total_count": data.get("total_count", 0),
+        "incomplete_results": data.get("incomplete_results", False),
+        "page": page,
+        "per_page": per_page,
+        "count": len(items),
+        "users": [
+            {
+                "login": user["login"],
+                "id": user["id"],
+                "type": user["type"],
+                "site_admin": user["site_admin"],
+                "url": user["html_url"],
+                "avatar_url": user["avatar_url"],
+            }
+            for user in items
+        ],
+    }
+
