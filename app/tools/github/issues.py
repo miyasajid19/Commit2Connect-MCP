@@ -10,6 +10,7 @@ def GitHubTokens()->dict:
     return {
         "access_token": os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"),
         "owner": os.getenv("GITHUB_OWNER"),
+        "api_url": "https://api.github.com",
         "headers": {
                 "Authorization": f"Bearer {os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')}",
                 "Accept": "application/vnd.github+json",
@@ -477,3 +478,345 @@ async def list_issues(
         ],
     }
  
+ 
+
+@tool
+async def reopen_issue(
+    owner: str,
+    repo: str,
+    issue_number: int,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Reopen a closed GitHub issue.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        issue_number: Issue number to reopen.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the reopened issue information, or an error
+        payload when validation fails, the access token is missing, or the
+        request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if issue_number <= 0:
+        await ctx.error("issue_number must be a positive integer.")
+        return {"success": False, "error": "issue_number must be a positive integer."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    payload = {
+        "state": "open",
+        "state_reason": "reopened",
+    }
+
+    try:
+        response = requests.patch(
+            f"{api_url}/repos/{owner}/{repo}/issues/{issue_number}",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to reopen issue #{issue_number} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+
+    await ctx.log(f"Reopened issue #{data['number']} in {owner}/{repo}")
+
+    return {
+        "success": True,
+        "issue_number": data["number"],
+        "title": data["title"],
+        "state": data["state"],
+        "state_reason": data.get("state_reason"),
+        "url": data["html_url"],
+    }
+
+
+@tool
+async def create_issue_comment(
+    owner: str,
+    repo: str,
+    issue_number: int,
+    body: str,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Create a comment on a GitHub issue.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        issue_number: Issue number to comment on.
+        body: Comment text (Markdown is supported).
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the created comment information, or an error
+        payload when validation fails, the access token is missing, or the
+        request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if issue_number <= 0:
+        await ctx.error("issue_number must be a positive integer.")
+        return {"success": False, "error": "issue_number must be a positive integer."}
+
+    if not body.strip():
+        await ctx.error("Comment body cannot be empty.")
+        return {"success": False, "error": "Comment body cannot be empty."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    payload = {"body": body}
+
+    try:
+        response = requests.post(
+            f"{api_url}/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to create comment on issue #{issue_number} "
+            f"in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+
+    await ctx.log(
+        f"Created comment #{data['id']} on issue #{issue_number} in {owner}/{repo}"
+    )
+
+    return {
+        "success": True,
+        "id": data["id"],
+        "body": data["body"],
+        "user": data["user"]["login"] if data.get("user") else None,
+        "created_at": data["created_at"],
+        "updated_at": data["updated_at"],
+        "url": data["html_url"],
+    }
+
+
+@tool
+async def list_issue_comments(
+    owner: str,
+    repo: str,
+    issue_number: int,
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    List comments on a GitHub issue.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        issue_number: Issue number whose comments to list.
+        per_page: Number of comments per page (1-100).
+        page: Page number to retrieve.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the list of comments with pagination metadata,
+        or an error payload when validation fails, the access token is
+        missing, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if issue_number <= 0:
+        await ctx.error("issue_number must be a positive integer.")
+        return {"success": False, "error": "issue_number must be a positive integer."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    params = {
+        "per_page": per_page,
+        "page": page,
+    }
+
+    try:
+        response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to list comments on issue #{issue_number} "
+            f"in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    raw_comments = response.json()
+
+    await ctx.log(
+        f"Retrieved {len(raw_comments)} comment(s) on issue #{issue_number} "
+        f"in {owner}/{repo} (page {page})"
+    )
+
+    return {
+        "success": True,
+        "issue_number": issue_number,
+        "count": len(raw_comments),
+        "page": page,
+        "per_page": per_page,
+        "comments": [
+            {
+                "id": comment["id"],
+                "body": comment["body"],
+                "user": comment["user"]["login"] if comment.get("user") else None,
+                "created_at": comment["created_at"],
+                "updated_at": comment["updated_at"],
+                "url": comment["html_url"],
+            }
+            for comment in raw_comments
+        ],
+    }
+
+
+@tool
+async def delete_issue_comment(
+    owner: str,
+    repo: str,
+    comment_id: int,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Delete a comment on a GitHub issue.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        comment_id: Numeric ID of the comment to delete.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary confirming the deletion, or an error payload when the
+        access token is missing, the comment ID is invalid, or the request
+        fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if comment_id <= 0:
+        await ctx.error("comment_id must be a positive integer.")
+        return {"success": False, "error": "comment_id must be a positive integer."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    try:
+        response = requests.delete(
+            f"{api_url}/repos/{owner}/{repo}/issues/comments/{comment_id}",
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to delete comment #{comment_id} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    await ctx.log(f"Deleted comment #{comment_id} in {owner}/{repo}")
+
+    return {
+        "success": True,
+        "comment_id": comment_id,
+        "message": f"Comment #{comment_id} deleted successfully from {owner}/{repo}.",
+    }
