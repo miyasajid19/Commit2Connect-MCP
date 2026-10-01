@@ -230,3 +230,104 @@ async def update_file(
         "commit_sha": data["commit"]["sha"],
         "url": data["content"]["html_url"],
     }
+
+
+@tool
+async def delete_file(
+    owner: str,
+    repo: str,
+    path: str,
+    message: str,
+    branch: str | None = None,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Delete a file from a GitHub repository.
+
+    The current file SHA is looked up automatically before the delete call, so
+    callers don't need to fetch it themselves.
+
+    Args:
+        owner: GitHub username or organization.
+        repo: Repository name.
+        path: File path inside the repository.
+        message: Commit message.
+        branch: Optional branch name.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the deletion commit SHA, or an error payload
+        when the access token is missing, the path is a directory, or the
+        request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    headers = tokens["headers"]
+
+    # Get current file SHA
+    params = {}
+
+    if branch:
+        params["ref"] = branch
+
+    try:
+        get_response = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/contents/{path}",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        get_response.raise_for_status()
+    except requests.RequestException as e:
+        await ctx.error(f"Failed to fetch SHA for {path} in {owner}/{repo}: {e}")
+        return {"success": False, "error": str(e)}
+
+    file_data = get_response.json()
+
+    if isinstance(file_data, list):
+        await ctx.error(f"{path} is a directory, not a file.")
+        return {"success": False, "error": f"{path} is a directory, not a file."}
+
+    sha = file_data["sha"]
+
+    # Delete file
+    payload = {
+        "message": message,
+        "sha": sha,
+    }
+
+    if branch:
+        payload["branch"] = branch
+
+    try:
+        response = requests.delete(
+            f"https://api.github.com/repos/{owner}/{repo}/contents/{path}",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        await ctx.error(f"Failed to delete {path} in {owner}/{repo}: {e}")
+        return {"success": False, "error": str(e)}
+
+    data = response.json()
+
+    await ctx.log(f"Deleted {path} from {owner}/{repo}")
+
+    return {
+        "success": True,
+        "message": message,
+        "path": path,
+        "commit_sha": data["commit"]["sha"],
+    }
+
+
+
+
