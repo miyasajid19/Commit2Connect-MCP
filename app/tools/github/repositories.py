@@ -1,5 +1,4 @@
 import os
-import token
 import requests
 from dotenv import load_dotenv
 load_dotenv()
@@ -11,6 +10,7 @@ def GitHubTokens()->dict:
     return {
         "access_token": os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"),
         "owner": os.getenv("GITHUB_OWNER"),
+        "api_url": "https://api.github.com",
         "headers": {
                 "Authorization": f"Bearer {os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')}",
                 "Accept": "application/vnd.github+json",
@@ -383,4 +383,153 @@ async def delete_repository(
     return {
         "success": True,
         "message": f"Repository '{owner}/{repo}' deleted successfully.",
+    }
+
+@tool
+async def search_repositories(
+    query: str,
+    sort: str | None = None,
+    order: str = "desc",
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Search for GitHub repositories matching a query string.
+
+    Uses GitHub's repository search syntax. Common qualifiers:
+        - ``user:username`` — limit to a user's repos.
+        - ``org:orgname`` — limit to an org's repos.
+        - ``language:python`` — filter by language.
+        - ``stars:>1000`` — minimum star count.
+        - ``topic:topic-name`` — filter by topic.
+        - ``in:name`` / ``in:description`` / ``in:readme`` — which field to search.
+        - ``archived:false`` — exclude archived repos.
+
+    Args:
+        query: Search query string (may include GitHub qualifiers).
+        sort: Optional sort field: "stars", "forks", "help-wanted-issues",
+            "updated", or "best-match" (default if not provided).
+        order: Sort direction: "asc" or "desc".
+        per_page: Number of results per page (1-100).
+        page: Page number to retrieve.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the search results with pagination metadata, or
+        an error payload when the access token is missing, the query is
+        empty, sort/order/per_page/page validation fails, or the request
+        fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if not query.strip():
+        await ctx.error("Search query cannot be empty.")
+        return {"success": False, "error": "Search query cannot be empty."}
+
+    if sort is not None and sort not in [
+        "stars",
+        "forks",
+        "help-wanted-issues",
+        "updated",
+        "best-match",
+    ]:
+        await ctx.error(
+            "sort must be one of: stars, forks, help-wanted-issues, "
+            "updated, best-match."
+        )
+        return {
+            "success": False,
+            "error": (
+                "sort must be one of: stars, forks, help-wanted-issues, "
+                "updated, best-match."
+            ),
+        }
+
+    if order not in ["asc", "desc"]:
+        await ctx.error("order must be 'asc' or 'desc'.")
+        return {"success": False, "error": "order must be 'asc' or 'desc'."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    params = {
+        "q": query,
+        "per_page": per_page,
+        "page": page,
+        "order": order,
+    }
+
+    if sort:
+        params["sort"] = sort
+
+    try:
+        response = requests.get(
+            f"{api_url}/search/repositories",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(f"Repository search failed for query '{query}': {e} | {body}")
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+    items = data.get("items", [])
+
+    await ctx.log(
+        f"Repository search for '{query}' returned {len(items)} result(s) "
+        f"(page {page}, {data.get('total_count', 0)} total)"
+    )
+
+    return {
+        "success": True,
+        "query": query,
+        "total_count": data.get("total_count", 0),
+        "incomplete_results": data.get("incomplete_results", False),
+        "page": page,
+        "per_page": per_page,
+        "count": len(items),
+        "repositories": [
+            {
+                "id": repo["id"],
+                "name": repo["name"],
+                "full_name": repo["full_name"],
+                "description": repo["description"],
+                "private": repo["private"],
+                "language": repo["language"],
+                "stars": repo["stargazers_count"],
+                "forks": repo["forks_count"],
+                "default_branch": repo["default_branch"],
+                "owner": repo["owner"]["login"],
+                "url": repo["html_url"],
+            }
+            for repo in items
+        ],
     }
