@@ -1,10 +1,12 @@
 import os
+from tkinter import RIGHT
 import requests
 from dotenv import load_dotenv
 load_dotenv()
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
+from typing import Literal
 
 def GitHubTokens()->dict:
     return {
@@ -20,11 +22,11 @@ def GitHubTokens()->dict:
     
 @tool
 async def create_pull_request(
-    owner: str,
     repo: str,
     title: str,
     head: str,
     base: str,
+    owner: str="miyasajid19",
     body: str = "",
     draft: bool = False,
     tokens: dict = Depends(GitHubTokens),
@@ -121,13 +123,13 @@ async def create_pull_request(
 
 @tool
 async def list_pull_requests(
-    owner: str,
     repo: str,
-    state: str = "open",
+    owner: str="miyasajid19",
+    state: Literal["open", "closed", "all"] = "open",
     head: str | None = None,
     base: str | None = None,
-    sort: str = "created",
-    direction: str = "desc",
+    sort: Literal["created", "updated", "popularity", "long-running"] = "created",
+    direction: Literal["asc", "desc"] = "desc",
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
@@ -263,9 +265,9 @@ async def list_pull_requests(
 
 @tool
 async def get_pull_request(
-    owner: str,
     repo: str,
     pull_number: int,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -368,9 +370,9 @@ async def get_pull_request(
 
 @tool
 async def update_pull_request(
-    owner: str,
     repo: str,
     pull_number: int,
+    owner: str="miyasajid19",
     title: str | None = None,
     body: str | None = None,
     state: str | None = None,
@@ -490,12 +492,12 @@ async def update_pull_request(
 
 @tool
 async def merge_pull_request(
-    owner: str,
     repo: str,
     pull_number: int,
+    owner: str="miyasajid19",
     commit_title: str | None = None,
     commit_message: str | None = None,
-    merge_method: str = "merge",
+    merge_method: Literal["merge", "squash", "rebase"] = "merge",
     sha: str | None = None,
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
@@ -594,9 +596,9 @@ async def merge_pull_request(
 
 @tool
 async def list_pull_request_files(
-    owner: str,
     repo: str,
     pull_number: int,
+    owner: str="miyasajid19",
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
@@ -702,9 +704,9 @@ async def list_pull_request_files(
 
 @tool
 async def get_pull_request_diff(
-    owner: str,
     repo: str,
     pull_number: int,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -778,9 +780,9 @@ async def get_pull_request_diff(
 
 @tool
 async def list_pull_request_reviews(
-    owner: str,
     repo: str,
     pull_number: int,
+    owner: str="miyasajid19",
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
@@ -883,11 +885,11 @@ async def list_pull_request_reviews(
 
 @tool
 async def create_pull_request_review(
-    owner: str,
     repo: str,
     pull_number: int,
+    owner: str="miyasajid19",
     body: str = "",
-    event: str = "COMMENT",
+    event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = "COMMENT",
     commit_id: str | None = None,
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
@@ -987,11 +989,11 @@ async def create_pull_request_review(
 
 @tool
 async def update_pull_request_review(
-    owner: str,
     repo: str,
     pull_number: int,
     review_id: int,
     body: str,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -1081,10 +1083,10 @@ async def update_pull_request_review(
 
 @tool
 async def delete_pull_request_review(
-    owner: str,
     repo: str,
     pull_number: int,
     review_id: int,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -1161,9 +1163,9 @@ async def delete_pull_request_review(
 
 @tool
 async def list_pull_request_comments(
-    owner: str,
     repo: str,
     pull_number: int,
+    owner: str = "miyasajid19",
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
@@ -1274,14 +1276,14 @@ async def list_pull_request_comments(
 
 @tool
 async def create_pull_request_comment(
-    owner: str,
     repo: str,
     pull_number: int,
     body: str,
     commit_id: str,
     path: str,
     line: int,
-    side: str = "RIGHT",
+    owner: str = "miyasajid19",
+    side: Literal["LEFT", "RIGHT"] = "RIGHT",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -1396,9 +1398,9 @@ async def create_pull_request_comment(
 
 @tool
 async def delete_pull_request_comment(
-    owner: str,
     repo: str,
     comment_id: int,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """

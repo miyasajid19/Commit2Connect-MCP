@@ -2,6 +2,8 @@ import os
 import requests
 from dotenv import load_dotenv
 load_dotenv()
+from typing import Literal
+from pydantic import Field
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
@@ -21,10 +23,10 @@ def GitHubTokens()->dict:
 
 @tool
 async def create_issue(
-    owner: str,
     repo: str,
     title: str,
     body: str = "",
+    owner: str="miyasajid19",
     labels: list[str] | None = None,
     assignees: list[str] | None = None,
     tokens: dict = Depends(GitHubTokens),
@@ -102,9 +104,9 @@ async def create_issue(
 
 @tool
 async def update_issue(
-    owner: str,
     repo: str,
     issue_number: int,
+    owner: str="miyasajid19",
     title: str | None = None,
     body: str | None = None,
     state: str | None = None,
@@ -250,13 +252,12 @@ async def update_issue(
         "url": data["html_url"],
         "updated_at": data["updated_at"],
     }
-    
 @tool
 async def close_issue(
-    owner: str,
     repo: str,
     issue_number: int,
-    state_reason: str = "completed",
+    owner: str="miyasajid19",
+    state_reason: str = Literal["completed", "not_planned"],
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -324,15 +325,15 @@ async def close_issue(
 
 @tool
 async def list_issues(
-    owner: str,
     repo: str,
-    state: str = "open",
+    owner: str="miyasajid19",
+    state: Literal["open", "closed", "all"] = Field(default="open"),
     labels: str | None = None,
     assignee: str | None = None,
     creator: str | None = None,
     mentioned: str | None = None,
-    sort: str = "created",
-    direction: str = "desc",
+    sort: Literal["created", "updated", "comments"] = "created",
+    direction: Literal["asc", "desc"] = "desc",
     since: str | None = None,
     per_page: int = 30,
     page: int = 1,
@@ -562,10 +563,10 @@ async def reopen_issue(
 
 @tool
 async def create_issue_comment(
-    owner: str,
     repo: str,
     issue_number: int,
     body: str,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -649,9 +650,9 @@ async def create_issue_comment(
 
 @tool
 async def list_issue_comments(
-    owner: str,
     repo: str,
     issue_number: int,
+    owner: str="miyasajid19",
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
@@ -755,9 +756,9 @@ async def list_issue_comments(
 
 @tool
 async def delete_issue_comment(
-    owner: str,
     repo: str,
     comment_id: int,
+    owner: str = "miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """

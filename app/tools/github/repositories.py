@@ -5,6 +5,7 @@ load_dotenv()
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
+from typing import Literal
 
 def GitHubTokens()->dict:
     return {
@@ -73,7 +74,7 @@ async def create_repository(name: str,description: str = "",private: bool = Fals
 
 
 @tool
-async def get_repository(owner: str, repo: str,tokens=Depends(GitHubTokens))-> dict:
+async def get_repository( repo: str,owner: str = "miyasajid19",tokens=Depends(GitHubTokens))-> dict:
     """
     Get information about a GitHub repository.
 
@@ -132,7 +133,7 @@ async def get_repository(owner: str, repo: str,tokens=Depends(GitHubTokens))-> d
 
 @tool
 async def list_repositories(
-    visibility: str = "all",
+    visibility: Literal["all", "public", "private"] = "all",
     affiliation: str = "owner,collaborator,organization_member",
     per_page: int = 30,
     page: int = 1,
@@ -230,8 +231,8 @@ async def list_repositories(
  
 @tool
 async def update_repository(
-    owner: str,
     repo: str,
+    owner: str="miyasajid19",
     name: str | None = None,
     description: str | None = None,
     private: bool | None = None,
@@ -352,8 +353,8 @@ async def update_repository(
 
 @tool    
 async def delete_repository(
-    owner: str,
     repo: str,
+    owner: str = "miyasajid19",
     tokens: dict = Depends(GitHubTokens)
 ):
     """
@@ -540,7 +541,7 @@ async def search_repositories(
 async def search_code(
     query: str,
     sort: str | None = None,
-    order: str = "desc",
+    order: Literal["asc", "desc"] = "desc",
     per_page: int = 30,
     page: int = 1,
     include_text_matches: bool = False,

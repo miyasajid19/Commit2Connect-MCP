@@ -6,7 +6,6 @@ from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
 
-GITHUB_API = os.getenv("GITHUB_API_URL", "https://api.github.com")
 
 
 def GitHubTokens() -> dict:
@@ -18,7 +17,7 @@ def GitHubTokens() -> dict:
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2026-03-10",
         },
-        "api_url": GITHUB_API,
+        "api_url": "https://api.github.com",
     }
 
 
@@ -108,9 +107,9 @@ async def get_branch(
 
 @tool
 async def get_branch_sha(
-    owner: str,
     repo: str,
     branch: str,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -181,10 +180,10 @@ async def get_branch_sha(
 
 @tool
 async def create_branch(
-    owner: str,
     repo: str,
     branch: str,
     source_branch: str,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
@@ -306,8 +305,8 @@ async def create_branch(
 
 @tool
 async def list_branches(
-    owner: str,
     repo: str,
+    owner: str="miyasajid19",
     protected_only: bool = False,
     per_page: int = 30,
     page: int = 1,
@@ -406,9 +405,9 @@ async def list_branches(
 
 @tool
 async def delete_branch(
-    owner: str,
     repo: str,
     branch: str,
+    owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
 ) -> dict:
     """
