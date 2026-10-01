@@ -533,3 +533,164 @@ async def search_repositories(
             for repo in items
         ],
     }
+
+
+
+@tool
+async def search_code(
+    query: str,
+    sort: str | None = None,
+    order: str = "desc",
+    per_page: int = 30,
+    page: int = 1,
+    include_text_matches: bool = False,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Search code across GitHub.
+
+    The GitHub Code Search API requires at least one qualifier in the query
+    string — a bare keyword like ``"foo"`` returns 422. Common qualifiers:
+
+        - ``repo:owner/name`` — restrict to one repository (required if your
+          token can't access all of GitHub's code).
+        - ``user:username`` — restrict to a user's repos.
+        - ``org:orgname`` — restrict to an org's repos.
+        - ``language:python`` — filter by language.
+        - ``path:src/`` — restrict to files under a path.
+        - ``extension:py`` — restrict to a file extension.
+        - ``filename:foo`` — match by filename.
+
+    Args:
+        query: Code search query string. Must include at least one qualifier.
+        sort: Optional sort field: "indexed" (only valid sort for code search).
+        order: Sort direction: "asc" or "desc".
+        per_page: Number of results per page (1-100).
+        page: Page number to retrieve.
+        include_text_matches: When True, fetches each result's text-match
+            fragments via the GitHub text-match media type
+            (``application/vnd.github.text-match+json``) and includes them
+            in the response. Adds extra round trips.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the search results with pagination metadata, or
+        an error payload when the access token is missing, the query is
+        empty, sort/order/per_page/page validation fails, or the request
+        fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if not query.strip():
+        await ctx.error("Search query cannot be empty.")
+        return {"success": False, "error": "Search query cannot be empty."}
+
+    if sort is not None and sort not in ["indexed"]:
+        await ctx.error("sort must be 'indexed' for code search.")
+        return {"success": False, "error": "sort must be 'indexed' for code search."}
+
+    if order not in ["asc", "desc"]:
+        await ctx.error("order must be 'asc' or 'desc'.")
+        return {"success": False, "error": "order must be 'asc' or 'desc'."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = dict(tokens["headers"])
+    api_url = tokens["api_url"]
+
+    # The text-match media type returns highlighted fragments per result;
+    # opt-in to keep default responses small.
+    if include_text_matches:
+        headers["Accept"] = "application/vnd.github.text-match+json"
+
+    params = {
+        "q": query,
+        "per_page": per_page,
+        "page": page,
+    }
+
+    if sort:
+        params["sort"] = sort
+        params["order"] = order
+
+    try:
+        response = requests.get(
+            f"{api_url}/search/code",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(f"Code search failed for query '{query}': {e} | {body}")
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+    items = data.get("items", [])
+
+    await ctx.log(
+        f"Code search for '{query}' returned {len(items)} result(s) "
+        f"(page {page}, {data.get('total_count', 0)} total)"
+    )
+
+    results = []
+    for item in items:
+        entry = {
+            "name": item["name"],
+            "path": item["path"],
+            "sha": item["sha"],
+            "repository": item["repository"]["full_name"],
+            "url": item["html_url"],
+            "git_url": item["git_url"],
+        }
+
+        if include_text_matches and "text_matches" in item:
+            entry["text_matches"] = [
+                {
+                    "fragment": match.get("fragment"),
+                    "matches": [
+                        {
+                            "text": m.get("text"),
+                            "indices": m.get("indices"),
+                        }
+                        for m in match.get("matches", [])
+                    ],
+                }
+                for match in item["text_matches"]
+            ]
+
+        results.append(entry)
+
+    return {
+        "success": True,
+        "query": query,
+        "total_count": data.get("total_count", 0),
+        "incomplete_results": data.get("incomplete_results", False),
+        "page": page,
+        "per_page": per_page,
+        "count": len(items),
+        "results": results,
+    }
