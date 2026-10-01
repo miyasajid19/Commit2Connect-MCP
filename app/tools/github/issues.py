@@ -249,3 +249,73 @@ async def update_issue(
         "url": data["html_url"],
         "updated_at": data["updated_at"],
     }
+    
+@tool
+async def close_issue(
+    owner: str,
+    repo: str,
+    issue_number: int,
+    state_reason: str = "completed",
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Close a GitHub issue.
+
+    Args:
+        owner: GitHub username or organization.
+        repo: Repository name.
+        issue_number: Issue number.
+        state_reason:
+            "completed" or "not_planned".
+        tokens:
+            Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the closed issue information, or an error
+        payload when validation fails, the access token is missing, or the
+        request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if state_reason not in ["completed", "not_planned"]:
+        await ctx.error("state_reason must be 'completed' or 'not_planned'.")
+        return {"success": False, "error": "state_reason must be 'completed' or 'not_planned'."}
+
+    headers = tokens["headers"]
+
+    payload = {
+        "state": "closed",
+        "state_reason": state_reason,
+    }
+
+    try:
+        response = requests.patch(
+            f"https://api.github.com/repos/"
+            f"{owner}/{repo}/issues/{issue_number}",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        await ctx.error(f"Failed to close issue #{issue_number} in {owner}/{repo}: {e}")
+        return {"success": False, "error": str(e)}
+
+    data = response.json()
+
+    await ctx.log(f"Closed issue #{data['number']} in {owner}/{repo}")
+
+    return {
+        "success": True,
+        "issue_number": data["number"],
+        "title": data["title"],
+        "state": data["state"],
+        "state_reason": data.get("state_reason"),
+        "url": data["html_url"],
+    }
