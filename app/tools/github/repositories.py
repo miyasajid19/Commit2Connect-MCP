@@ -68,3 +68,61 @@ async def create_repository(name: str,description: str = "",private: bool = Fals
         "ssh_url": data["ssh_url"],
     }
 
+
+
+
+
+@tool
+async def get_repository(owner: str, repo: str,tokens=Depends(GitHubTokens))-> dict:
+    """
+    Get information about a GitHub repository.
+
+    Args:
+        owner: GitHub username or organization name.
+        repo: Repository name.
+
+    Returns:
+        Repository information.
+    """
+
+    ctx = get_context()
+    access_token = tokens["access_token"]
+    
+    if not access_token:
+        await ctx.error("GITHUB_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_TOKEN is missing"}
+
+    headers = tokens["headers"]
+    
+    response = requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}",
+        headers=headers,
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+    await ctx.log(f"Repository '{owner}/{repo}' information retrieved successfully.")
+    return {
+        "success": True,
+        "id": data["id"],
+        "name": data["name"],
+        "full_name": data["full_name"],
+        "description": data["description"],
+        "private": data["private"],
+        "default_branch": data["default_branch"],
+        "html_url": data["html_url"],
+        "clone_url": data["clone_url"],
+        "ssh_url": data["ssh_url"],
+        "language": data["language"],
+        "fork": data["fork"],
+        "archived": data["archived"],
+        "visibility": data["visibility"],
+        "created_at": data["created_at"],
+        "updated_at": data["updated_at"],
+        "pushed_at": data["pushed_at"],
+        "stars": data["stargazers_count"],
+        "forks": data["forks_count"],
+        "open_issues": data["open_issues_count"],
+    }
