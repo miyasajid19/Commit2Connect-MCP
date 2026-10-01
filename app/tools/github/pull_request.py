@@ -365,3 +365,125 @@ async def get_pull_request(
         "additions": data["additions"],
         "deletions": data["deletions"],
     }
+
+@tool
+async def update_pull_request(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    title: str | None = None,
+    body: str | None = None,
+    state: str | None = None,
+    base: str | None = None,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Update an existing GitHub pull request.
+
+    Only fields explicitly provided will be updated.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        title: New pull request title.
+        body: New pull request description.
+        state: "open" or "closed".
+        base: Branch to merge the pull request into.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the updated pull request information, or an
+        error payload when validation fails, the access token is missing,
+        or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if state is not None and state not in ["open", "closed"]:
+        await ctx.error("state must be 'open' or 'closed'.")
+        return {"success": False, "error": "state must be 'open' or 'closed'."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    payload = {}
+
+    if title is not None:
+        if not title.strip():
+            await ctx.error("Pull request title cannot be empty.")
+            return {"success": False, "error": "Pull request title cannot be empty."}
+
+        payload["title"] = title
+
+    if body is not None:
+        payload["body"] = body
+
+    if state is not None:
+        payload["state"] = state
+
+    if base is not None:
+        if not base.strip():
+            await ctx.error("Base branch cannot be empty.")
+            return {"success": False, "error": "Base branch cannot be empty."}
+
+        payload["base"] = base
+
+    if not payload:
+        await ctx.error("At least one field must be provided.")
+        return {"success": False, "error": "At least one field must be provided."}
+
+    try:
+        response = requests.patch(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to update pull request #{pull_number} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+
+    await ctx.log(
+        f"Updated pull request #{data['number']} in {owner}/{repo} "
+        f"(state={data.get('state')})"
+    )
+
+    return {
+        "success": True,
+        "number": data["number"],
+        "title": data["title"],
+        "body": data["body"],
+        "state": data["state"],
+        "draft": data["draft"],
+        "head": data["head"]["ref"],
+        "base": data["base"]["ref"],
+        "merged": data.get("merged", False),
+        "url": data["html_url"],
+        "updated_at": data["updated_at"],
+    }
