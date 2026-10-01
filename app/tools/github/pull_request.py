@@ -592,3 +592,875 @@ async def merge_pull_request(
     }
     
 
+@tool
+async def list_pull_request_files(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    List files changed in a pull request.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        per_page: Number of files per page (1-100).
+        page: Page number to retrieve.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the list of changed files with diff metadata
+        and pagination metadata, or an error payload when validation fails,
+        the access token is missing, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    params = {
+        "per_page": per_page,
+        "page": page,
+    }
+
+    try:
+        response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}/files",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to list files for PR #{pull_number} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    raw_files = response.json()
+
+    await ctx.log(
+        f"Retrieved {len(raw_files)} file(s) for PR #{pull_number} in {owner}/{repo}"
+    )
+
+    return {
+        "success": True,
+        "pull_number": pull_number,
+        "count": len(raw_files),
+        "page": page,
+        "per_page": per_page,
+        "files": [
+            {
+                "filename": file["filename"],
+                "status": file["status"],
+                "additions": file["additions"],
+                "deletions": file["deletions"],
+                "changes": file["changes"],
+                "sha": file["sha"],
+                "blob_url": file["blob_url"],
+                "raw_url": file["raw_url"],
+                "contents_url": file["contents_url"],
+                "patch": file.get("patch"),
+            }
+            for file in raw_files
+        ],
+    }
+
+
+@tool
+async def get_pull_request_diff(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Get the unified diff of a pull request as raw text.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the raw diff text and PR metadata, or an error
+        payload when validation fails, the access token is missing, or the
+        request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    headers = dict(tokens["headers"])
+    api_url = tokens["api_url"]
+
+    # Override the Accept header to request raw diff text.
+    headers["Accept"] = "application/vnd.github.diff"
+
+    try:
+        response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}",
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to get diff for PR #{pull_number} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    diff_text = response.text
+
+    await ctx.log(
+        f"Retrieved diff ({len(diff_text)} chars) for PR #{pull_number} in {owner}/{repo}"
+    )
+
+    return {
+        "success": True,
+        "pull_number": pull_number,
+        "diff": diff_text,
+    }
+
+
+@tool
+async def list_pull_request_reviews(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    List reviews on a pull request.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        per_page: Number of reviews per page (1-100).
+        page: Page number to retrieve.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the list of reviews with pagination metadata,
+        or an error payload when validation fails, the access token is
+        missing, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    params = {
+        "per_page": per_page,
+        "page": page,
+    }
+
+    try:
+        response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to list reviews for PR #{pull_number} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    raw_reviews = response.json()
+
+    await ctx.log(
+        f"Retrieved {len(raw_reviews)} review(s) for PR #{pull_number} in {owner}/{repo}"
+    )
+
+    return {
+        "success": True,
+        "pull_number": pull_number,
+        "count": len(raw_reviews),
+        "page": page,
+        "per_page": per_page,
+        "reviews": [
+            {
+                "id": review["id"],
+                "user": review["user"]["login"] if review.get("user") else None,
+                "body": review["body"],
+                "state": review["state"],
+                "commit_id": review["commit_id"],
+                "submitted_at": review["submitted_at"],
+                "html_url": review["html_url"],
+            }
+            for review in raw_reviews
+        ],
+    }
+
+
+@tool
+async def create_pull_request_review(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    body: str = "",
+    event: str = "COMMENT",
+    commit_id: str | None = None,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Create a review on a pull request.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        body: Review comment text (Markdown is supported).
+        event: Review action — "APPROVE", "REQUEST_CHANGES", or "COMMENT".
+            When omitted ("COMMENT"), the review is left as a comment without
+            affecting the merge status.
+        commit_id: Optional SHA of the commit to review. Defaults to the
+            latest commit on the PR.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the created review information, or an error
+        payload when validation fails, the access token is missing, or the
+        request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if event not in ["APPROVE", "REQUEST_CHANGES", "COMMENT"]:
+        await ctx.error("event must be 'APPROVE', 'REQUEST_CHANGES', or 'COMMENT'.")
+        return {
+            "success": False,
+            "error": "event must be 'APPROVE', 'REQUEST_CHANGES', or 'COMMENT'.",
+        }
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    payload = {
+        "body": body,
+        "event": event,
+    }
+
+    if commit_id:
+        payload["commit_id"] = commit_id
+
+    try:
+        response = requests.post(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to create review on PR #{pull_number} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    review = response.json()
+
+    await ctx.log(
+        f"Created review #{review['id']} on PR #{pull_number} "
+        f"in {owner}/{repo} (event={event})"
+    )
+
+    return {
+        "success": True,
+        "id": review["id"],
+        "user": review["user"]["login"] if review.get("user") else None,
+        "body": review["body"],
+        "state": review["state"],
+        "commit_id": review["commit_id"],
+        "submitted_at": review["submitted_at"],
+        "html_url": review["html_url"],
+    }
+
+
+@tool
+async def update_pull_request_review(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    review_id: int,
+    body: str,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Update the body of a pending pull request review.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        review_id: Numeric ID of the review to update.
+        body: New review body text (Markdown is supported).
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the updated review information, or an error
+        payload when validation fails, the access token is missing, or the
+        request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if review_id <= 0:
+        await ctx.error("review_id must be a positive integer.")
+        return {"success": False, "error": "review_id must be a positive integer."}
+
+    if not body.strip():
+        await ctx.error("Review body cannot be empty.")
+        return {"success": False, "error": "Review body cannot be empty."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    payload = {"body": body}
+
+    try:
+        response = requests.put(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to update review #{review_id} on PR #{pull_number} "
+            f"in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    review = response.json()
+
+    await ctx.log(
+        f"Updated review #{review_id} on PR #{pull_number} in {owner}/{repo}"
+    )
+
+    return {
+        "success": True,
+        "id": review["id"],
+        "user": review["user"]["login"] if review.get("user") else None,
+        "body": review["body"],
+        "state": review["state"],
+        "commit_id": review["commit_id"],
+        "submitted_at": review["submitted_at"],
+        "html_url": review["html_url"],
+    }
+
+
+@tool
+async def delete_pull_request_review(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    review_id: int,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Delete a pending pull request review.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        review_id: Numeric ID of the review to delete.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary confirming the deletion, or an error payload when the
+        access token is missing, the IDs are invalid, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if review_id <= 0:
+        await ctx.error("review_id must be a positive integer.")
+        return {"success": False, "error": "review_id must be a positive integer."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    try:
+        response = requests.delete(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to delete review #{review_id} on PR #{pull_number} "
+            f"in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    await ctx.log(
+        f"Deleted review #{review_id} on PR #{pull_number} in {owner}/{repo}"
+    )
+
+    return {
+        "success": True,
+        "review_id": review_id,
+        "message": (
+            f"Review #{review_id} deleted from PR #{pull_number} "
+            f"in {owner}/{repo}."
+        ),
+    }
+
+
+@tool
+async def list_pull_request_comments(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    List review comments on a pull request.
+
+    These are line-level comments attached to a file/line in a PR diff (not
+    the issue-style conversation comments on the PR itself).
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        per_page: Number of comments per page (1-100).
+        page: Page number to retrieve.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the list of comments with pagination metadata,
+        or an error payload when validation fails, the access token is
+        missing, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    params = {
+        "per_page": per_page,
+        "page": page,
+    }
+
+    try:
+        response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}/comments",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to list review comments on PR #{pull_number} "
+            f"in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    raw_comments = response.json()
+
+    await ctx.log(
+        f"Retrieved {len(raw_comments)} review comment(s) on PR #{pull_number} "
+        f"in {owner}/{repo}"
+    )
+
+    return {
+        "success": True,
+        "pull_number": pull_number,
+        "count": len(raw_comments),
+        "page": page,
+        "per_page": per_page,
+        "comments": [
+            {
+                "id": comment["id"],
+                "body": comment["body"],
+                "user": comment["user"]["login"] if comment.get("user") else None,
+                "path": comment["path"],
+                "line": comment.get("line"),
+                "side": comment.get("side"),
+                "commit_id": comment["commit_id"],
+                "created_at": comment["created_at"],
+                "updated_at": comment["updated_at"],
+                "html_url": comment["html_url"],
+            }
+            for comment in raw_comments
+        ],
+    }
+
+
+@tool
+async def create_pull_request_comment(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    body: str,
+    commit_id: str,
+    path: str,
+    line: int,
+    side: str = "RIGHT",
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Create a line-level review comment on a pull request.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        body: Comment text (Markdown is supported).
+        commit_id: SHA of the commit to comment on.
+        path: File path inside the PR diff to anchor the comment to.
+        line: Line number within the file (1-indexed).
+        side: Side of the diff — "LEFT" or "RIGHT".
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the created comment information, or an error
+        payload when validation fails, the access token is missing, or the
+        request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if not body.strip():
+        await ctx.error("Comment body cannot be empty.")
+        return {"success": False, "error": "Comment body cannot be empty."}
+
+    if not path.strip():
+        await ctx.error("path cannot be empty.")
+        return {"success": False, "error": "path cannot be empty."}
+
+    if not commit_id.strip():
+        await ctx.error("commit_id cannot be empty.")
+        return {"success": False, "error": "commit_id cannot be empty."}
+
+    if line <= 0:
+        await ctx.error("line must be a positive integer.")
+        return {"success": False, "error": "line must be a positive integer."}
+
+    if side not in ["LEFT", "RIGHT"]:
+        await ctx.error("side must be 'LEFT' or 'RIGHT'.")
+        return {"success": False, "error": "side must be 'LEFT' or 'RIGHT'."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    payload = {
+        "body": body,
+        "commit_id": commit_id,
+        "path": path,
+        "line": line,
+        "side": side,
+    }
+
+    try:
+        response = requests.post(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}/comments",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to create review comment on PR #{pull_number} "
+            f"at {path}:{line} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    comment = response.json()
+
+    await ctx.log(
+        f"Created review comment #{comment['id']} on PR #{pull_number} "
+        f"at {path}:{line} in {owner}/{repo}"
+    )
+
+    return {
+        "success": True,
+        "id": comment["id"],
+        "body": comment["body"],
+        "user": comment["user"]["login"] if comment.get("user") else None,
+        "path": comment["path"],
+        "line": comment.get("line"),
+        "side": comment.get("side"),
+        "commit_id": comment["commit_id"],
+        "created_at": comment["created_at"],
+        "updated_at": comment["updated_at"],
+        "html_url": comment["html_url"],
+    }
+
+
+@tool
+async def delete_pull_request_comment(
+    owner: str,
+    repo: str,
+    comment_id: int,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Delete a line-level review comment on a pull request.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        comment_id: Numeric ID of the review comment to delete.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary confirming the deletion, or an error payload when the
+        access token is missing, the comment ID is invalid, or the request
+        fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if comment_id <= 0:
+        await ctx.error("comment_id must be a positive integer.")
+        return {"success": False, "error": "comment_id must be a positive integer."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    try:
+        response = requests.delete(
+            f"{api_url}/repos/{owner}/{repo}/pulls/comments/{comment_id}",
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to delete review comment #{comment_id} "
+            f"in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    await ctx.log(f"Deleted review comment #{comment_id} in {owner}/{repo}")
+
+    return {
+        "success": True,
+        "comment_id": comment_id,
+        "message": (
+            f"Review comment #{comment_id} deleted from {owner}/{repo}."
+        ),
+    }
