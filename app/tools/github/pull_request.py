@@ -487,3 +487,108 @@ async def update_pull_request(
         "url": data["html_url"],
         "updated_at": data["updated_at"],
     }
+
+@tool
+async def merge_pull_request(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    commit_title: str | None = None,
+    commit_message: str | None = None,
+    merge_method: str = "merge",
+    sha: str | None = None,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Merge a GitHub pull request.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        pull_number: Pull request number.
+        commit_title: Optional merge commit title.
+        commit_message: Optional merge commit message.
+        merge_method: Merge strategy — "merge" (default), "squash", or "rebase".
+        sha: Optional SHA that the head of the PR must match. If it doesn't,
+            GitHub returns 409 instead of merging (concurrency guard).
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the merge result (merged flag, SHA of the merge
+            commit, and message), or an error payload when validation fails,
+            the access token is missing, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if pull_number <= 0:
+        await ctx.error("pull_number must be a positive integer.")
+        return {"success": False, "error": "pull_number must be a positive integer."}
+
+    if merge_method not in ["merge", "squash", "rebase"]:
+        await ctx.error("merge_method must be 'merge', 'squash', or 'rebase'.")
+        return {
+            "success": False,
+            "error": "merge_method must be 'merge', 'squash', or 'rebase'.",
+        }
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    payload = {
+        "merge_method": merge_method,
+    }
+
+    if commit_title is not None:
+        payload["commit_title"] = commit_title
+    if commit_message is not None:
+        payload["commit_message"] = commit_message
+    if sha is not None:
+        payload["sha"] = sha
+
+    try:
+        response = requests.put(
+            f"{api_url}/repos/{owner}/{repo}/pulls/{pull_number}/merge",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to merge pull request #{pull_number} in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    data = response.json()
+
+    await ctx.log(
+        f"Merged pull request #{pull_number} in {owner}/{repo} "
+        f"(method={merge_method}, sha={data.get('sha', '')[:7]})"
+    )
+
+    return {
+        "success": True,
+        "merged": data.get("merged", False),
+        "message": data.get("message"),
+        "sha": data.get("sha"),
+        "merge_method": merge_method,
+    }
+    
+
