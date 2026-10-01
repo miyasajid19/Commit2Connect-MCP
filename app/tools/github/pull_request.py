@@ -117,3 +117,144 @@ async def create_pull_request(
         "base": data["base"]["ref"],
         "url": data["html_url"],
     }
+
+
+@tool
+async def list_pull_requests(
+    owner: str,
+    repo: str,
+    state: str = "open",
+    head: str | None = None,
+    base: str | None = None,
+    sort: str = "created",
+    direction: str = "desc",
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    List pull requests for a GitHub repository.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        state: Filter by state — "open", "closed", or "all".
+        head: Filter by head branch (e.g. "feature/login" or "owner:branch").
+        base: Filter by base branch (e.g. "main").
+        sort: Sort field — "created", "updated", "popularity" (comment count),
+            or "long-running" (age, oldest first).
+        direction: Sort direction — "asc" or "desc".
+        per_page: Number of pull requests per page (1-100).
+        page: Page number to retrieve.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the list of pull requests with pagination
+        metadata, or an error payload when validation fails, the access token
+        is missing, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if state not in ["open", "closed", "all"]:
+        await ctx.error("state must be 'open', 'closed', or 'all'.")
+        return {"success": False, "error": "state must be 'open', 'closed', or 'all'."}
+
+    if sort not in ["created", "updated", "popularity", "long-running"]:
+        await ctx.error("sort must be one of: created, updated, popularity, long-running.")
+        return {
+            "success": False,
+            "error": "sort must be one of: created, updated, popularity, long-running.",
+        }
+
+    if direction not in ["asc", "desc"]:
+        await ctx.error("direction must be 'asc' or 'desc'.")
+        return {"success": False, "error": "direction must be 'asc' or 'desc'."}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    params = {
+        "state": state,
+        "sort": sort,
+        "direction": direction,
+        "per_page": per_page,
+        "page": page,
+    }
+
+    if head:
+        params["head"] = head
+    if base:
+        params["base"] = base
+
+    try:
+        response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/pulls",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(
+            f"Failed to list pull requests in {owner}/{repo}: {e} | {body}"
+        )
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    raw_prs = response.json()
+
+    await ctx.log(
+        f"Retrieved {len(raw_prs)} {state} pull requests from {owner}/{repo} "
+        f"(page {page})"
+    )
+
+    return {
+        "success": True,
+        "count": len(raw_prs),
+        "page": page,
+        "per_page": per_page,
+        "state": state,
+        "pull_requests": [
+            {
+                "number": pr["number"],
+                "title": pr["title"],
+                "state": pr["state"],
+                "draft": pr["draft"],
+                "head": pr["head"]["ref"],
+                "base": pr["base"]["ref"],
+                "user": pr["user"]["login"] if pr.get("user") else None,
+                "labels": [label["name"] for label in pr.get("labels", [])],
+                "created_at": pr["created_at"],
+                "updated_at": pr["updated_at"],
+                "closed_at": pr.get("closed_at"),
+                "merged_at": pr.get("merged_at"),
+                "mergeable": pr.get("mergeable"),
+                "url": pr["html_url"],
+            }
+            for pr in raw_prs
+        ],
+    }
