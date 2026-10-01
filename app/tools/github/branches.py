@@ -300,3 +300,106 @@ async def create_branch(
         "sha": data["object"]["sha"],
         "url": data["object"].get("url"),
     }
+
+
+
+
+@tool
+async def list_branches(
+    owner: str,
+    repo: str,
+    protected_only: bool = False,
+    per_page: int = 30,
+    page: int = 1,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    List branches in a GitHub repository.
+
+    Args:
+        owner: GitHub username or organization that owns the repository.
+        repo: Repository name.
+        protected_only: When True, only return protected branches.
+        per_page: Number of branches per page (1-100).
+        page: Page number to retrieve.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing the list of branches with pagination metadata,
+        or an error payload when the access token is missing, pagination
+        parameters are invalid, or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    if per_page < 1 or per_page > 100:
+        await ctx.error("per_page must be between 1 and 100.")
+        return {"success": False, "error": "per_page must be between 1 and 100."}
+
+    if page < 1:
+        await ctx.error("page must be >= 1.")
+        return {"success": False, "error": "page must be >= 1."}
+
+    headers = tokens["headers"]
+    api_url = tokens["api_url"]
+
+    params = {
+        "per_page": per_page,
+        "page": page,
+    }
+
+    if protected_only:
+        params["protected"] = "true"
+
+    try:
+        response = requests.get(
+            f"{api_url}/repos/{owner}/{repo}/branches",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        body = ""
+        if e.response is not None:
+            try:
+                body = e.response.text
+            except Exception:
+                body = "<unreadable response body>"
+        await ctx.error(f"Failed to list branches in {owner}/{repo}: {e} | {body}")
+        return {
+            "success": False,
+            "error": str(e),
+            "status_code": e.response.status_code if e.response is not None else None,
+            "github_response": body,
+        }
+
+    raw_branches = response.json()
+
+    await ctx.log(
+        f"Retrieved {len(raw_branches)} branches from {owner}/{repo} "
+        f"(page {page}, protected_only={protected_only})"
+    )
+
+    return {
+        "success": True,
+        "count": len(raw_branches),
+        "page": page,
+        "per_page": per_page,
+        "protected_only": protected_only,
+        "branches": [
+            {
+                "name": branch["name"],
+                "protected": branch["protected"],
+                "sha": branch["commit"]["sha"],
+                "url": f"https://github.com/{owner}/{repo}/tree/{branch['name']}",
+            }
+            for branch in raw_branches
+        ],
+    } 
+    
