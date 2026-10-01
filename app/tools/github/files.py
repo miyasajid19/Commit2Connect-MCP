@@ -1,5 +1,4 @@
 import os
-import token
 import requests
 from dotenv import load_dotenv
 load_dotenv()
@@ -85,4 +84,74 @@ async def get_file(owner: str,repo: str,path: str,ref: str | None = None,tokens:
         "url": data["html_url"],
         "download_url": data["download_url"],
         "content": decoded_content,
+    }
+
+
+@tool
+async def create_file(
+    owner: str,
+    repo: str,
+    path: str,
+    content: str,
+    message: str,
+    branch: str | None = None,
+    tokens: dict = Depends(GitHubTokens),
+) -> dict:
+    """
+    Create a new file in a GitHub repository.
+
+    Args:
+        owner: GitHub username or organization.
+        repo: Repository name.
+        path: File path inside the repository.
+        content: File content as a string.
+        message: Commit message.
+        branch: Optional branch name.
+        tokens: Dependency-injected GitHub authentication settings.
+
+    Returns:
+        Dictionary containing file and commit information, or an error payload
+        when the access token is missing or the request fails.
+    """
+
+    ctx = get_context()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    headers = tokens["headers"]
+
+    payload = {
+        "message": message,
+        "content": base64.b64encode(content.encode("utf-8")).decode("utf-8"),
+    }
+
+    if branch:
+        payload["branch"] = branch
+
+    try:
+        response = requests.put(
+            f"https://api.github.com/repos/{owner}/{repo}/contents/{path}",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        await ctx.error(f"Failed to create file {path} in {owner}/{repo}: {e}")
+        return {"success": False, "error": str(e)}
+
+    data = response.json()
+
+    await ctx.log(f"Created file {data['content']['path']} in {owner}/{repo}")
+
+    return {
+        "success": True,
+        "message": message,
+        "path": data["content"]["path"],
+        "sha": data["content"]["sha"],
+        "commit_sha": data["commit"]["sha"],
+        "url": data["content"]["html_url"],
     }
