@@ -226,4 +226,127 @@ async def list_repositories(
         ],
     }
     
+    
  
+@tool
+async def update_repository(
+    owner: str,
+    repo: str,
+    name: str | None = None,
+    description: str | None = None,
+    private: bool | None = None,
+    visibility: str | None = None,
+    has_issues: bool | None = None,
+    has_projects: bool | None = None,
+    has_wiki: bool | None = None,
+    is_template: bool | None = None,
+    default_branch: str | None = None,
+    tokens: dict = Depends(GitHubTokens)
+):
+    """
+    Update an existing GitHub repository.
+
+    Only fields explicitly provided will be updated.
+
+    Args:
+        owner: GitHub username or organization.
+        repo: Repository name.
+
+        name:
+            New repository name.
+
+        description:
+            New repository description.
+
+        private:
+            Make repository private/public.
+
+        visibility:
+            Repository visibility:
+            public, private, or internal.
+
+        has_issues:
+            Enable/disable Issues.
+
+        has_projects:
+            Enable/disable Projects.
+
+        has_wiki:
+            Enable/disable Wiki.
+
+        is_template:
+            Mark/unmark repository as a template.
+
+        default_branch:
+            Change the default branch.
+    """
+    ctx = get_context()
+    access_token = tokens["access_token"]
+
+    if not access_token:
+        await ctx.error("GITHUB_PERSONAL_ACCESS_TOKEN is missing")  
+        return {"success": False, "error": "GITHUB_PERSONAL_ACCESS_TOKEN is missing"}
+
+    headers = tokens["headers"]
+
+    # Build payload only with values that were provided.
+    payload = {}
+
+    if name is not None:
+        payload["name"] = name
+
+    if description is not None:
+        payload["description"] = description
+
+    if private is not None:
+        payload["private"] = private
+
+    if visibility is not None:
+        payload["visibility"] = visibility
+
+    if has_issues is not None:
+        payload["has_issues"] = has_issues
+
+    if has_projects is not None:
+        payload["has_projects"] = has_projects
+
+    if has_wiki is not None:
+        payload["has_wiki"] = has_wiki
+
+    if is_template is not None:
+        payload["is_template"] = is_template
+
+    if default_branch is not None:
+        payload["default_branch"] = default_branch
+
+    if not payload:
+        await ctx.error("At least one repository field must be provided.")
+        return {"success": False, "error": "At least one repository field must be provided."}
+
+    response = requests.patch(
+        f"https://api.github.com/repos/{owner}/{repo}",
+        headers=headers,
+        json=payload,
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+    await ctx.log(f"Repository '{owner}/{repo}' updated successfully.")
+    return {
+        "success": True,
+        "id": data["id"],
+        "name": data["name"],
+        "full_name": data["full_name"],
+        "description": data["description"],
+        "private": data["private"],
+        "visibility": data["visibility"],
+        "default_branch": data["default_branch"],
+        "html_url": data["html_url"],
+        "clone_url": data["clone_url"],
+        "ssh_url": data["ssh_url"],
+        "updated_at": data["updated_at"],
+    }
+
+
