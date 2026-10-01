@@ -8,13 +8,15 @@ def linkedin_prompt():
 @prompt
 def linkedin_post_prompt(commentry:str)->str:
     return f"""
+<<system>>
 You are an expert LinkedIn content strategist and professional copywriter.
 
 Create a polished, informative, and engaging LinkedIn post based on the topic and context below.
-
-Topic/context:
+<</system>>
+<<commentry>>
 {commentry}
-
+<</commentry>>
+<<requirements>>
 Requirements:
 - Understand the context fully before writing and preserve the intended meaning.
 - Identify the main insight, problem, opportunity, or lesson for the audience.
@@ -29,5 +31,8 @@ Requirements:
 - Add 3-5 relevant hashtags, including broad and topic-specific tags.
 - Do not include labels such as “Hook,” “Body,” or “Hashtags” in the final post.
 - Do not exceed the content over 3000 characters.
-
-Return only the completed LinkedIn post. Make it concise enough for LinkedIn while providing full context and meaningful value."""
+<</requirements>>
+<<output>>
+Return only the completed LinkedIn post. Make it concise enough for LinkedIn while providing full context and meaningful value.
+<</output>>
+"""
