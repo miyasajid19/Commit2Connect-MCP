@@ -5,7 +5,7 @@ load_dotenv()
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
-
+from mcp.types import ToolAnnotations
 
 
 def GitHubTokens() -> dict:
@@ -21,12 +21,13 @@ def GitHubTokens() -> dict:
     }
 
 
-@tool
+@tool(tags={"github", "branches", "read"}, version="1.0")
 async def get_branch(
     owner: str,
     repo: str,
     branch: str,
     tokens: dict = Depends(GitHubTokens),
+    annotations=ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     Get information about a single GitHub branch.
@@ -105,12 +106,13 @@ async def get_branch(
     }
 
 
-@tool
+@tool(tags={"github", "branches", "read"}, version="1.0")
 async def get_branch_sha(
     repo: str,
     branch: str,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations=ToolAnnotations(readOnlyHint=True)
 ) -> dict:
     """
     Get the commit SHA at the tip of a GitHub branch.
@@ -178,13 +180,14 @@ async def get_branch_sha(
     }
     
 
-@tool
+@tool(tags={"github", "branches", "write"}, version="1.0")
 async def create_branch(
     repo: str,
     branch: str,
     source_branch: str,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations=ToolAnnotations(openWorldHint=True)
 ) -> dict:
     """
     Create a new GitHub branch from an existing branch.
@@ -303,7 +306,7 @@ async def create_branch(
 
 
 
-@tool
+@tool(tags={"github", "branches", "read"}, version="1.0")
 async def list_branches(
     repo: str,
     owner: str="miyasajid19",
@@ -311,6 +314,7 @@ async def list_branches(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations=ToolAnnotations(readOnlyHint=True)
 ) -> dict:
     """
     List branches in a GitHub repository.
@@ -403,12 +407,13 @@ async def list_branches(
     }
 
 
-@tool
+@tool(tags={"github", "branches", "destructive"}, version="1.0")
 async def delete_branch(
     repo: str,
     branch: str,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations=ToolAnnotations(destructionHint=True)
 ) -> dict:
     """
     Delete a GitHub branch.

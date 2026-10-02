@@ -7,6 +7,7 @@ from pydantic import Field
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
+from mcp.types import ToolAnnotations
 
 def GitHubTokens()->dict:
     return {
@@ -21,7 +22,7 @@ def GitHubTokens()->dict:
     }
 
 
-@tool
+@tool(tags={"github", "issues", "write"}, version="1.0")
 async def create_issue(
     repo: str,
     title: str,
@@ -30,6 +31,7 @@ async def create_issue(
     labels: list[str] | None = None,
     assignees: list[str] | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False),
 ) -> dict:
     """
     Create an issue in a GitHub repository.
@@ -102,7 +104,7 @@ async def create_issue(
 
 
 
-@tool
+@tool(tags={"github", "issues", "write"}, version="1.0")
 async def update_issue(
     repo: str,
     issue_number: int,
@@ -115,6 +117,7 @@ async def update_issue(
     assignees: list[str] | None = None,
     milestone: int | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True),
 ) -> dict:
     """
     Update an existing GitHub issue.
@@ -252,13 +255,14 @@ async def update_issue(
         "url": data["html_url"],
         "updated_at": data["updated_at"],
     }
-@tool
+@tool(tags={"github", "issues", "write"}, version="1.0")
 async def close_issue(
     repo: str,
     issue_number: int,
     owner: str="miyasajid19",
     state_reason: str = Literal["completed", "not_planned"],
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True),
 ) -> dict:
     """
     Close a GitHub issue.
@@ -323,7 +327,7 @@ async def close_issue(
     }
 
 
-@tool
+@tool(tags={"github", "issues", "read"}, version="1.0")
 async def list_issues(
     repo: str,
     owner: str="miyasajid19",
@@ -338,6 +342,7 @@ async def list_issues(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     List issues in a GitHub repository.
@@ -481,12 +486,13 @@ async def list_issues(
  
  
 
-@tool
+@tool(tags={"github", "issues", "write"}, version="1.0")
 async def reopen_issue(
     owner: str,
     repo: str,
     issue_number: int,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True),
 ) -> dict:
     """
     Reopen a closed GitHub issue.
@@ -561,13 +567,14 @@ async def reopen_issue(
     }
 
 
-@tool
+@tool(tags={"github", "issues", "comments", "write"}, version="1.0")
 async def create_issue_comment(
     repo: str,
     issue_number: int,
     body: str,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False),
 ) -> dict:
     """
     Create a comment on a GitHub issue.
@@ -648,7 +655,7 @@ async def create_issue_comment(
     }
 
 
-@tool
+@tool(tags={"github", "issues", "comments", "read"}, version="1.0")
 async def list_issue_comments(
     repo: str,
     issue_number: int,
@@ -656,6 +663,7 @@ async def list_issue_comments(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     List comments on a GitHub issue.
@@ -754,12 +762,13 @@ async def list_issue_comments(
     }
 
 
-@tool
+@tool(tags={"github", "issues", "comments", "destructive"}, version="1.0")
 async def delete_issue_comment(
     repo: str,
     comment_id: int,
     owner: str = "miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(destructionHint=True),
 ) -> dict:
     """
     Delete a comment on a GitHub issue.

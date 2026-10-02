@@ -5,6 +5,7 @@ load_dotenv()
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
+from mcp.types import ToolAnnotations
 from typing import Literal
 
 def GitHubTokens()->dict:
@@ -19,8 +20,8 @@ def GitHubTokens()->dict:
             }
     }
 
-@tool
-async def create_repository(name: str,description: str = "",private: bool = False,auto_init: bool = False,tokens: dict = Depends(GitHubTokens))-> dict:
+@tool(tags={"github", "repositories", "write"}, version="1.0")
+async def create_repository(name: str,description: str = "",private: bool = False,auto_init: bool = False,tokens: dict = Depends(GitHubTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False))-> dict:
     """
     Create a new GitHub repository for the authenticated user.
 
@@ -73,8 +74,8 @@ async def create_repository(name: str,description: str = "",private: bool = Fals
 
 
 
-@tool
-async def get_repository( repo: str,owner: str = "miyasajid19",tokens=Depends(GitHubTokens))-> dict:
+@tool(tags={"github", "repositories", "read"}, version="1.0")
+async def get_repository( repo: str,owner: str = "miyasajid19",tokens=Depends(GitHubTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True))-> dict:
     """
     Get information about a GitHub repository.
 
@@ -131,13 +132,14 @@ async def get_repository( repo: str,owner: str = "miyasajid19",tokens=Depends(Gi
 
 
 
-@tool
+@tool(tags={"github", "repositories", "read"}, version="1.0")
 async def list_repositories(
     visibility: Literal["all", "public", "private"] = "all",
     affiliation: str = "owner,collaborator,organization_member",
     per_page: int = 30,
     page: int = 1,
-    tokens: dict = Depends(GitHubTokens)
+    tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True)
 ):
     """
     List repositories accessible to the authenticated GitHub user.
@@ -229,7 +231,7 @@ async def list_repositories(
     
     
  
-@tool
+@tool(tags={"github", "repositories", "write"}, version="1.0")
 async def update_repository(
     repo: str,
     owner: str="miyasajid19",
@@ -242,7 +244,8 @@ async def update_repository(
     has_wiki: bool | None = None,
     is_template: bool | None = None,
     default_branch: str | None = None,
-    tokens: dict = Depends(GitHubTokens)
+    tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True)
 ):
     """
     Update an existing GitHub repository.
@@ -351,11 +354,12 @@ async def update_repository(
     }
 
 
-@tool    
+@tool(tags={"github", "repositories", "destructive"}, version="1.0")
 async def delete_repository(
     repo: str,
     owner: str = "miyasajid19",
-    tokens: dict = Depends(GitHubTokens)
+    tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(destructionHint=True)
 ):
     """
     Delete a GitHub repository.
@@ -386,7 +390,7 @@ async def delete_repository(
         "message": f"Repository '{owner}/{repo}' deleted successfully.",
     }
 
-@tool
+@tool(tags={"github", "repositories", "search", "read"}, version="1.0")
 async def search_repositories(
     query: str,
     sort: str | None = None,
@@ -394,6 +398,7 @@ async def search_repositories(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     Search for GitHub repositories matching a query string.
@@ -537,7 +542,7 @@ async def search_repositories(
 
 
 
-@tool
+@tool(tags={"github", "search", "read"}, version="1.0")
 async def search_code(
     query: str,
     sort: str | None = None,
@@ -546,6 +551,7 @@ async def search_code(
     page: int = 1,
     include_text_matches: bool = False,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     Search code across GitHub.
@@ -697,7 +703,7 @@ async def search_code(
     }
 
 
-@tool
+@tool(tags={"github", "search", "users", "read"}, version="1.0")
 async def search_users(
     query: str,
     sort: str | None = None,
@@ -705,6 +711,7 @@ async def search_users(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     Search for GitHub users matching a query string.

@@ -4,7 +4,12 @@ from dotenv import load_dotenv
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
+from mcp.types import ToolAnnotations
 from typing import Literal
+from fastmcp_tasks import TasksExtension
+from datetime import timedelta
+from fastmcp.utilities.tasks import TaskConfig
+
 load_dotenv()
 
 
@@ -29,8 +34,8 @@ def LinkedInTokens()->dict:
 
 
 
-@tool
-async def get_profile(tokens:dict=Depends(LinkedInTokens))->dict:
+@tool(tags={"linkedin", "read"}, version="1.0")
+async def get_profile(tokens:dict=Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True))->dict:
     '''
     Get the authenticated user's OpenID Connect profile information from LinkedIn.
 
@@ -81,8 +86,8 @@ async def get_profile(tokens:dict=Depends(LinkedInTokens))->dict:
 
     return response.json()
 
-@tool
-async def create_text_post(content:str, tokens:dict=Depends(LinkedInTokens))->dict:
+@tool(tags={"linkedin", "post", "write"}, version="1.0")
+async def create_text_post(content:str, tokens:dict=Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False))->dict:
     '''
     Create a new post on LinkedIn with only text content.
 
@@ -168,10 +173,11 @@ def upload_image(image_path:str,headers:dict,author:str,access_token:str)->str:
     return image_urn
 
 
-@tool
+@tool(task=TaskConfig(mode="required",poll_interval=timedelta(seconds=3)), tags={"linkedin", "post", "write", "task"}, version="1.0")
 async def create_multi_image_post(
     content: str,
     image_paths:list[str],
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False),
 ):
     """Create a LinkedIn post containing multiple images.
 
@@ -281,9 +287,9 @@ async def create_multi_image_post(
     
 
 
-@tool
+@tool(tags={"linkedin", "post", "write", "poll"}, version="1.0")
 # async def create_poll(question: str,options: list[str],duration: Literal["ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", "FOURTEEN_DAYS"]="THREE_DAYS",commentary: str = "", tokens:dict=Depends(LinkedInTokens))->dict:
-async def create_poll(question: str,options: list[str],duration: Literal["ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", "FOURTEEN_DAYS"]="THREE_DAYS",commentary: str = "", tokens:dict=Depends(LinkedInTokens))->dict:
+async def create_poll(question: str,options: list[str],duration: Literal["ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", "FOURTEEN_DAYS"]="THREE_DAYS",commentary: str = "", tokens:dict=Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False))->dict:
     """
     Create a LinkedIn poll post for the authenticated member.
 
@@ -443,8 +449,8 @@ def upload_document(file_path:str,headers:dict,author:str,access_token:str)->str
 
     return document_urn
 
-@tool
-async def create_document_post(file_path:str, content:str, title:str="Document",tokens:dict=Depends(LinkedInTokens))->dict:
+@tool(task=True, tags={"linkedin", "post", "write", "task", "document"}, version="1.0")
+async def create_document_post(file_path:str, content:str, title:str="Document",tokens:dict=Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False))->dict:
     ctx=get_context()
     access_token=tokens.get("access_token")
     api_version=tokens.get("version","202609")
@@ -631,8 +637,8 @@ async def _upload_video_parts(ctx, file_path, instructions, file_size):
     return uploaded_part_ids
 
 
-@tool
-async def create_video_post(file_path:str,commentary:str="",title:str="Video",tokens:dict=Depends(LinkedInTokens))->dict:
+@tool(task=TaskConfig(mode="required",poll_interval=timedelta(seconds=30)), tags={"linkedin", "post", "write", "task", "video"}, version="1.0")
+async def create_video_post(file_path:str,commentary:str="",title:str="Video",tokens:dict=Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False))->dict:
     ctx=get_context()
     access_token=tokens.get("access_token")
     api_version=tokens.get("version","202609")
@@ -691,8 +697,9 @@ async def create_video_post(file_path:str,commentary:str="",title:str="Video",to
     }
 
 
-@tool
-async def create_image_post(file_path: str,commentary: str = "",alt_text: str = "",tokens: dict = Depends(LinkedInTokens)) -> dict:
+
+@tool(task=True, tags={"linkedin", "post", "write", "task", "image"}, version="1.0")
+async def create_image_post(file_path: str,commentary: str = "",alt_text: str = "",tokens: dict = Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False)) -> dict:
     """
     Upload an image to LinkedIn and publish it as a post.
 
@@ -788,8 +795,8 @@ async def create_image_post(file_path: str,commentary: str = "",alt_text: str = 
     
     
     
-@tool
-async def create_article_post(source_url: str,commentary: str,title: str,description: str = "",thumbnail_path: str | None = None,tokens: dict = Depends(LinkedInTokens)) -> dict:
+@tool(tags={"linkedin", "post", "write", "article"}, version="1.0")
+async def create_article_post(source_url: str,commentary: str,title: str,description: str = "",thumbnail_path: str | None = None,tokens: dict = Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False)) -> dict:
     """
     Create a LinkedIn article/link post.
 
@@ -895,8 +902,8 @@ async def create_article_post(source_url: str,commentary: str,title: str,descrip
     }
 
 
-@tool
-async def update_post(post_urn: str, new_text: str, tokens: dict = Depends(LinkedInTokens)) -> dict:
+@tool(tags={"linkedin", "post", "write"}, version="1.0")
+async def update_post(post_urn: str, new_text: str, tokens: dict = Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True)) -> dict:
     """
     Update the text of an existing LinkedIn post.
 
@@ -963,8 +970,8 @@ async def update_post(post_urn: str, new_text: str, tokens: dict = Depends(Linke
     
 
 
-@tool
-async def delete_post(post_urn: str,tokens: dict = Depends(LinkedInTokens)) -> dict:
+@tool(tags={"linkedin", "post", "destructive"}, version="1.0")
+async def delete_post(post_urn: str,tokens: dict = Depends(LinkedInTokens),annotations: ToolAnnotations = ToolAnnotations(destructionHint=True)) -> dict:
     """
     Delete a LinkedIn post.
 

@@ -5,7 +5,9 @@ load_dotenv()
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
+from mcp.types import ToolAnnotations
 import base64
+
 
 def GitHubTokens()->dict:
     return {
@@ -20,8 +22,8 @@ def GitHubTokens()->dict:
     }
 
 
-@tool
-async def get_file(repo: str,path: str,owner: str="miyasajid19",ref: str | None = None,tokens: dict = Depends(GitHubTokens)) -> dict:
+@tool(tags={"github", "files", "read"}, version="1.0")
+async def get_file(repo: str,path: str,owner: str="miyasajid19",ref: str | None = None,tokens: dict = Depends(GitHubTokens),annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True)) -> dict:
     """
     Get a file from a GitHub repository.
 
@@ -88,7 +90,7 @@ async def get_file(repo: str,path: str,owner: str="miyasajid19",ref: str | None 
     }
 
 
-@tool
+@tool(tags={"github", "files", "write"}, version="1.0")
 async def create_file(
     repo: str,
     path: str,
@@ -97,6 +99,7 @@ async def create_file(
     owner: str="miyasajid19",
     branch: str | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True)
 ) -> dict:
     """
     Create a new file in a GitHub repository.
@@ -158,7 +161,7 @@ async def create_file(
     }
 
 
-@tool
+@tool(tags={"github", "files", "write"}, version="1.0")
 async def update_file(
     repo: str,
     path: str,
@@ -168,6 +171,7 @@ async def update_file(
     owner: str="miyasajid19",
     branch: str | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True)
 ) -> dict:
     """
     Update an existing file in a GitHub repository.
@@ -233,7 +237,7 @@ async def update_file(
     }
 
 
-@tool
+@tool(tags={"github", "files", "destructive"}, version="1.0")
 async def delete_file(
     repo: str,
     path: str,
@@ -241,6 +245,7 @@ async def delete_file(
     owner: str="miyasajid19",
     branch: str | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(destructionHint=True)
 ) -> dict:
     """
     Delete a file from a GitHub repository.
@@ -330,7 +335,7 @@ async def delete_file(
     }
 
 
-@tool
+@tool(tags={"github", "files", "write", "atomic"}, version="1.0")
 async def push_files(
     repo: str,
     branch: str,
@@ -340,6 +345,7 @@ async def push_files(
     author_name: str | None = None,
     author_email: str | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False)
 ) -> dict:
     """
     Push one or more local files to a GitHub branch in a single atomic commit.

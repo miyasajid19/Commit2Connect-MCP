@@ -5,7 +5,7 @@ load_dotenv()
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
-
+from mcp.types import ToolAnnotations
 
 def GitHubTokens() -> dict:
     return {
@@ -20,7 +20,7 @@ def GitHubTokens() -> dict:
     }
 
 
-@tool
+@tool(tags={"github", "commits", "read"}, version="1.0")
 async def list_commits(
     owner: str,
     repo: str,
@@ -32,6 +32,7 @@ async def list_commits(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True)
 ) -> dict:
     """
     List commits in a GitHub repository.
@@ -146,12 +147,13 @@ async def list_commits(
     }
 
 
-@tool
+@tool(tags={"github", "commits", "read"}, version="1.0")
 async def get_commit(
     owner: str,
     repo: str,
     commit_sha: str,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True)
 ) -> dict:
     """
     Get details of a single commit, including files changed and stats.
@@ -249,13 +251,14 @@ async def get_commit(
     }
 
 
-@tool
+@tool(tags={"github", "commits", "read", "compare"}, version="1.0")
 async def compare_commits(
     owner: str,
     repo: str,
     base: str,
     head: str,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True)
 ) -> dict:
     """
     Compare two commits, branches, or tags using a three-dot comparison.

@@ -6,6 +6,7 @@ load_dotenv()
 from fastmcp.tools import tool
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import get_context
+from mcp.types import ToolAnnotations
 from typing import Literal
 
 def GitHubTokens()->dict:
@@ -20,7 +21,7 @@ def GitHubTokens()->dict:
             }
     }
     
-@tool
+@tool(tags={"github", "pull_request", "write"}, version="1.0")
 async def create_pull_request(
     repo: str,
     title: str,
@@ -30,6 +31,7 @@ async def create_pull_request(
     body: str = "",
     draft: bool = False,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False),
 ) -> dict:
     """
     Create a pull request in a GitHub repository.
@@ -121,7 +123,7 @@ async def create_pull_request(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "read"}, version="1.0")
 async def list_pull_requests(
     repo: str,
     owner: str="miyasajid19",
@@ -133,6 +135,7 @@ async def list_pull_requests(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     List pull requests for a GitHub repository.
@@ -263,12 +266,13 @@ async def list_pull_requests(
 
 
 
-@tool
+@tool(tags={"github", "pull_request", "read"}, version="1.0")
 async def get_pull_request(
     repo: str,
     pull_number: int,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     Get details of a GitHub pull request.
@@ -368,7 +372,7 @@ async def get_pull_request(
         "deletions": data["deletions"],
     }
 
-@tool
+@tool(tags={"github", "pull_request", "write"}, version="1.0")
 async def update_pull_request(
     repo: str,
     pull_number: int,
@@ -378,6 +382,7 @@ async def update_pull_request(
     state: str | None = None,
     base: str | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True),
 ) -> dict:
     """
     Update an existing GitHub pull request.
@@ -490,7 +495,7 @@ async def update_pull_request(
         "updated_at": data["updated_at"],
     }
 
-@tool
+@tool(tags={"github", "pull_request", "merge", "destructive"}, version="1.0")
 async def merge_pull_request(
     repo: str,
     pull_number: int,
@@ -500,6 +505,7 @@ async def merge_pull_request(
     merge_method: Literal["merge", "squash", "rebase"] = "merge",
     sha: str | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(destructionHint=True),
 ) -> dict:
     """
     Merge a GitHub pull request.
@@ -594,7 +600,7 @@ async def merge_pull_request(
     }
     
 
-@tool
+@tool(tags={"github", "pull_request", "files", "read"}, version="1.0")
 async def list_pull_request_files(
     repo: str,
     pull_number: int,
@@ -602,6 +608,7 @@ async def list_pull_request_files(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     List files changed in a pull request.
@@ -702,12 +709,13 @@ async def list_pull_request_files(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "files", "read"}, version="1.0")
 async def get_pull_request_diff(
     repo: str,
     pull_number: int,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     Get the unified diff of a pull request as raw text.
@@ -778,7 +786,7 @@ async def get_pull_request_diff(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "reviews", "read"}, version="1.0")
 async def list_pull_request_reviews(
     repo: str,
     pull_number: int,
@@ -786,6 +794,7 @@ async def list_pull_request_reviews(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     List reviews on a pull request.
@@ -883,7 +892,7 @@ async def list_pull_request_reviews(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "reviews", "write"}, version="1.0")
 async def create_pull_request_review(
     repo: str,
     pull_number: int,
@@ -892,6 +901,7 @@ async def create_pull_request_review(
     event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = "COMMENT",
     commit_id: str | None = None,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False),
 ) -> dict:
     """
     Create a review on a pull request.
@@ -987,7 +997,7 @@ async def create_pull_request_review(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "reviews", "write"}, version="1.0")
 async def update_pull_request_review(
     repo: str,
     pull_number: int,
@@ -995,6 +1005,7 @@ async def update_pull_request_review(
     body: str,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True),
 ) -> dict:
     """
     Update the body of a pending pull request review.
@@ -1081,13 +1092,14 @@ async def update_pull_request_review(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "reviews", "destructive"}, version="1.0")
 async def delete_pull_request_review(
     repo: str,
     pull_number: int,
     review_id: int,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(destructionHint=True),
 ) -> dict:
     """
     Delete a pending pull request review.
@@ -1161,7 +1173,7 @@ async def delete_pull_request_review(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "comments", "read"}, version="1.0")
 async def list_pull_request_comments(
     repo: str,
     pull_number: int,
@@ -1169,6 +1181,7 @@ async def list_pull_request_comments(
     per_page: int = 30,
     page: int = 1,
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=True),
 ) -> dict:
     """
     List review comments on a pull request.
@@ -1274,7 +1287,7 @@ async def list_pull_request_comments(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "comments", "write"}, version="1.0")
 async def create_pull_request_comment(
     repo: str,
     pull_number: int,
@@ -1285,6 +1298,7 @@ async def create_pull_request_comment(
     owner: str = "miyasajid19",
     side: Literal["LEFT", "RIGHT"] = "RIGHT",
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False),
 ) -> dict:
     """
     Create a line-level review comment on a pull request.
@@ -1396,12 +1410,13 @@ async def create_pull_request_comment(
     }
 
 
-@tool
+@tool(tags={"github", "pull_request", "comments", "destructive"}, version="1.0")
 async def delete_pull_request_comment(
     repo: str,
     comment_id: int,
     owner: str="miyasajid19",
     tokens: dict = Depends(GitHubTokens),
+    annotations: ToolAnnotations = ToolAnnotations(destructionHint=True),
 ) -> dict:
     """
     Delete a line-level review comment on a pull request.
