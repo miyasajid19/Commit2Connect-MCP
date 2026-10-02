@@ -44,10 +44,10 @@ uv sync
 
 ### Configure
 
-Copy your environment file and fill in the values (see [Configuration](#configuration) below):
+Copy the example env file and fill in real values:
 
 ```bash
-cp .env .env.local   # if you don't already have a .env, create it
+cp .env.example .env
 ```
 
 ### Start
