@@ -6,13 +6,14 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "dotenv>=0.9.9",
-    "mcp>=1.2,<2",
+    "mcp>=2.0.0",
     "httpx>=0.27",
     "uvicorn[standard]>=0.30",
     "itsdangerous>=2.1",
-    "fastmcp>=3.4.7",
     "requests>=2.34.2",
-    "langchain>=1.4.3",
+    "langchain[mcp]>=1.4.3",
     "langchain-openai>=1.6.7",
     "websockets>=16.1.1",
+    "fastmcp[tasks]>=3.4.7",
+    "fastmcp-tasks>=4.0.10",
 ]
