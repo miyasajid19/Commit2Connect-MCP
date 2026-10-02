@@ -1,7 +1,7 @@
 [project]
-name = "linkedin-mcp-server"
+name = "commit2connect-mcp"
 version = "0.1.0"
-description = "MCP server for posting to LinkedIn via the official Share on LinkedIn REST API (v202401)"
+description = "commit2connect-mcp: bridge code (GitHub commits) and conversation (LinkedIn posts) from a single MCP server."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

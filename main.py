@@ -18,7 +18,7 @@ from fastmcp.server.middleware.caching import (
 from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
 from fastmcp_tasks import TasksExtension
 
-mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "app",reload=True)],transforms=[CodeMode()])
+mcp = FastMCP("commit2connect-mcp", providers=[FileSystemProvider(Path(__file__).parent / "app",reload=True)],transforms=[CodeMode()])
 
 mcp.add_extension(TasksExtension())
 mcp.add_transform(ResourcesAsTools(mcp))

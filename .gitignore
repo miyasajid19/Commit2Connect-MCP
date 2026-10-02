@@ -14,5 +14,4 @@ wheels/
 *.token.json
 .env
 temp.py
-oauth.py
 test.py

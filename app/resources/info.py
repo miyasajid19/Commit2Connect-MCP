@@ -4,8 +4,12 @@ from fastmcp.resources import resource
 @resource("data://info", tags={"server", "documentation"}, version="1.0")
 def server_info():
     return """
-LinkedIn MCP Server
-===================
+commit2connect-mcp
+==================
+
+A bridge between the places you **commit** code and the places you
+**connect** with people: full GitHub repository management + full
+LinkedIn posting, exposed as a single Model Context Protocol (MCP) server.
 
 A Model Context Protocol (MCP) server built on FastMCP that exposes two
 domain surfaces as MCP tools, prompts, and resources:
