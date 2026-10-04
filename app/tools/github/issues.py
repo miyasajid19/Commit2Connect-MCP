@@ -260,7 +260,7 @@ async def close_issue(
     repo: str,
     issue_number: int,
     owner: str="miyasajid19",
-    state_reason: str = Literal["completed", "not_planned"],
+    state_reason:Literal["completed", "not_planned"]= Field(default="completed"),
     tokens: dict = Depends(GitHubTokens),
     annotations: ToolAnnotations = ToolAnnotations(readOnlyHint=False,idempotentHint=True),
 ) -> dict:

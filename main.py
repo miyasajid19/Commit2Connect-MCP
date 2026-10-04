@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 from fastmcp.server.providers import FileSystemProvider
-from fastmcp.experimental.transforms.code_mode import CodeMode
+fromfrom fastmcp.experimental.transforms.code_mode import CodeMode
 from fastmcp.server.transforms import ResourcesAsTools,PromptsAsTools
 from fastmcp.server.middleware.logging import LoggingMiddleware
 from fastmcp.server.middleware.timing import DetailedTimingMiddleware
@@ -16,13 +16,12 @@ from fastmcp.server.middleware.caching import (
     GetPromptSettings,
 )
 from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
-from fastmcp_tasks import TasksExtension
-
-mcp = FastMCP("commit2connect-mcp", providers=[FileSystemProvider(Path(__file__).parent / "app",reload=True)],transforms=[CodeMode()])
-
-mcp.add_extension(TasksExtension())
+from fastmcp_tasks import TasksExtension# mcp = FastMCP("commit2connect-mcp", providers=[FileSystemProvider(Path(__file__).parent / "app",reload=True)],transforms=[CodeMode()])
+mcp = FastMCP("commit2connect-mcp", providers=[FileSystemProvider(Path(__file__).parent / "app", reload=True)])
+])
+sksExtension())
 mcp.add_transform(ResourcesAsTools(mcp))
-mcp.add_transform(PromptsAsTools(mcp))
+mcp.add_transform(# PromptsAsTools(mcp))
 mcp.add_middleware(LoggingMiddleware())
 mcp.add_middleware(DetailedTimingMiddleware())
 mcp.add_middleware(ResponseCachingMiddleware(

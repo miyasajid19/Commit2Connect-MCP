@@ -16,4 +16,5 @@ dependencies = [
     "websockets>=16.1.1",
     "fastmcp[tasks]>=3.4.7",
     "fastmcp-tasks>=4.0.10",
+    "fastmcp[code-mode]",
 ]
